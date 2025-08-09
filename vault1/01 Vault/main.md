@@ -8,7 +8,7 @@ cast-vaults:
 Hello this is a test! @ yay!
 
 So I was thinking right.
-asdfasdf
+
 Yay 2
 
 More text added to vault1
@@ -16,3 +16,4 @@ More text added to vault1
 -asdasd
 Different text from vault2
 asdfasdfasdf
+asdfasdf asdfasdf asdfasdf

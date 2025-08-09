@@ -1,4 +1,19 @@
 {
+  "23bf51c0-0ab7-4398-8306-b00afd7724b1": {
+    "cast_type": "",
+    "cast_vaults": [
+      "vault1 (sync)",
+      "vault2 (sync)"
+    ],
+    "cast_version": "1",
+    "category": "",
+    "digest": "sha256:1542e570b9c0052f203be3f297f7435a786e045ff886c7f89963cc8109b68952",
+    "path": "01 Vault/anotherfile.md",
+    "size": 137,
+    "tags": [],
+    "title": "anotherfile",
+    "updated": "2025-08-09T12:30:03.991680Z"
+  },
   "5d8d777b-51ed-4dd2-ba7d-6f8194ce03da": {
     "cast_type": "",
     "cast_vaults": [
@@ -7,11 +22,11 @@
     ],
     "cast_version": "1",
     "category": "",
-    "digest": "sha256:dfd094e0d30715ae1413cc2d7059586c8818cad991efdbcf1cb3e587b145c50a",
+    "digest": "sha256:ffee1aa814ca0b94a9dab56c31933f8dc2b057c65a9a51ff8c31bce27fa877fd",
     "path": "01 Vault/main.md",
-    "size": 246,
+    "size": 265,
     "tags": [],
     "title": "main",
-    "updated": "2025-08-09T11:53:55.802034Z"
+    "updated": "2025-08-09T12:28:03.917494Z"
   }
 }

@@ -1,13 +1,18 @@
 {
   "files": {
-    "5d8d777b-51ed-4dd2-ba7d-6f8194ce03da": {
-      "base_obj": "sha256:740f8718f8205fc67aa2fc10921861b94ba980a1508ef68b876b240efd1c6bb7",
-      "dest_digest": "sha256:740f8718f8205fc67aa2fc10921861b94ba980a1508ef68b876b240efd1c6bb7",
-      "last_at": "2025-08-09T11:53:55.824531Z",
+    "23bf51c0-0ab7-4398-8306-b00afd7724b1": {
+      "base_obj": "sha256:94338d2c48431deb540bb8268999ac844d76f9e427e35c0ac0ecd2977db2bc9d",
+      "dest_digest": "sha256:94338d2c48431deb540bb8268999ac844d76f9e427e35c0ac0ecd2977db2bc9d",
+      "dest_path": "01 Vault/anotherfile.md",
+      "last_at": "2025-08-09T13:31:48.016331Z",
       "last_result": "CONFLICT",
-      "source_digest": "sha256:740f8718f8205fc67aa2fc10921861b94ba980a1508ef68b876b240efd1c6bb7"
+      "source_digest": "sha256:94338d2c48431deb540bb8268999ac844d76f9e427e35c0ac0ecd2977db2bc9d"
+    },
+    "5d8d777b-51ed-4dd2-ba7d-6f8194ce03da": {
+      "last_at": "2025-08-09T12:28:03.924627Z",
+      "last_result": "RESOLVED"
     }
   },
-  "last_sync": "2025-08-09T11:53:55.824879Z",
+  "last_sync": "2025-08-09T13:31:48.016761Z",
   "peer_id": "vault2"
 }
