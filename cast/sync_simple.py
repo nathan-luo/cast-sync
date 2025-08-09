@@ -3,10 +3,47 @@
 import shutil
 from pathlib import Path
 from typing import Any
+import json
 
 from cast.config import GlobalConfig, VaultConfig
 from cast.index import build_index
-import json
+
+
+class SyncState:
+    """Tracks last sync digests between vaults."""
+    
+    def __init__(self, vault_path: Path):
+        """Initialize sync state for a vault."""
+        self.vault_path = vault_path
+        self.state_file = vault_path / ".cast" / "sync_state.json"
+        self.state = {}
+        self.load()
+    
+    def load(self):
+        """Load sync state from disk."""
+        if self.state_file.exists():
+            try:
+                with open(self.state_file) as f:
+                    self.state = json.load(f)
+            except:
+                self.state = {}
+    
+    def save(self):
+        """Save sync state to disk."""
+        self.state_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.state_file, 'w') as f:
+            json.dump(self.state, f, indent=2)
+    
+    def get_last_sync_digest(self, peer_vault: str, cast_id: str) -> str | None:
+        """Get the last synced digest for a file with a peer vault."""
+        peer_data = self.state.get(peer_vault, {})
+        return peer_data.get(cast_id)
+    
+    def set_last_sync_digest(self, peer_vault: str, cast_id: str, digest: str):
+        """Record the digest of a file after successful sync."""
+        if peer_vault not in self.state:
+            self.state[peer_vault] = {}
+        self.state[peer_vault][cast_id] = digest
 
 
 class SimpleSyncEngine:
@@ -138,6 +175,10 @@ class SimpleSyncEngine:
             "actions": [],
         }
         
+        # Load sync states for both vaults
+        sync_state1 = SyncState(vault1_path)
+        sync_state2 = SyncState(vault2_path)
+        
         # Find all unique cast-ids
         all_ids = set(vault1_index.keys()) | set(vault2_index.keys())
         
@@ -151,6 +192,11 @@ class SimpleSyncEngine:
                     vault1_path / file1_info["path"],
                     vault2_path / file1_info["path"],
                 )
+                # Set sync state after copying
+                digest1 = file1_info.get("body_digest")
+                if digest1:
+                    sync_state1.set_last_sync_digest(vault2_path.name, cast_id, digest1)
+                    sync_state2.set_last_sync_digest(vault1_path.name, cast_id, digest1)
                 result["synced"] += 1
                 result["actions"].append({
                     "type": "COPY_TO_VAULT2",
@@ -164,6 +210,11 @@ class SimpleSyncEngine:
                         vault2_path / file2_info["path"],
                         vault1_path / file2_info["path"],
                     )
+                    # Set sync state after copying
+                    digest2 = file2_info.get("body_digest")
+                    if digest2:
+                        sync_state1.set_last_sync_digest(vault2_path.name, cast_id, digest2)
+                        sync_state2.set_last_sync_digest(vault1_path.name, cast_id, digest2)
                     result["synced"] += 1
                     result["actions"].append({
                         "type": "COPY_TO_VAULT1",
@@ -176,7 +227,7 @@ class SimpleSyncEngine:
                 file1_path = vault1_path / file1_info["path"]
                 file2_path = vault2_path / file2_info["path"]
                 
-                # Compare by body digest
+                # Get current digests
                 digest1 = file1_info.get("body_digest")
                 digest2 = file2_info.get("body_digest")
                 
@@ -189,54 +240,112 @@ class SimpleSyncEngine:
                     files_different = digest1 != digest2
                 
                 if files_different:
-                    # Files are different - handle conflict
-                    if overpower:
-                        # Force vault1's version
-                        self._copy_file(file1_path, file2_path)
-                        result["synced"] += 1
-                        result["actions"].append({
-                            "type": "OVERPOWER",
-                            "file": file1_info["path"],
-                        })
-                    elif interactive:
-                        # Let user choose
-                        choice = self._resolve_conflict_interactive(
-                            cast_id,
-                            file1_path,
-                            file2_path,
-                            vault1_path.name,
-                            vault2_path.name,
-                        )
-                        
-                        if choice == "1":
+                    # Files differ - check if we can auto-merge
+                    last_sync1 = sync_state1.get_last_sync_digest(vault2_path.name, cast_id)
+                    last_sync2 = sync_state2.get_last_sync_digest(vault1_path.name, cast_id)
+                    
+                    # Auto-merge logic:
+                    # - If vault1 changed but vault2 didn't (digest2 == last_sync): use vault1
+                    # - If vault2 changed but vault1 didn't (digest1 == last_sync): use vault2
+                    # - If both changed: conflict
+                    can_auto_merge = False
+                    auto_use_vault1 = False
+                    
+                    if last_sync1 and digest2 == last_sync1:
+                        # Vault2 hasn't changed since last sync, use vault1
+                        can_auto_merge = True
+                        auto_use_vault1 = True
+                    elif last_sync2 and digest1 == last_sync2:
+                        # Vault1 hasn't changed since last sync, use vault2
+                        can_auto_merge = True
+                        auto_use_vault1 = False
+                    
+                    if can_auto_merge and not overpower:
+                        # Auto-merge without prompting
+                        if auto_use_vault1:
                             self._copy_file(file1_path, file2_path)
+                            # Update sync states
+                            sync_state1.set_last_sync_digest(vault2_path.name, cast_id, digest1)
+                            sync_state2.set_last_sync_digest(vault1_path.name, cast_id, digest1)
                             result["synced"] += 1
                             result["actions"].append({
-                                "type": "USE_VAULT1",
+                                "type": "AUTO_MERGE_VAULT1",
                                 "file": file1_info["path"],
-                            })
-                        elif choice == "2":
-                            self._copy_file(file2_path, file1_path)
-                            result["synced"] += 1
-                            result["actions"].append({
-                                "type": "USE_VAULT2",
-                                "file": file2_info["path"],
                             })
                         else:
-                            result["conflicts"] += 1
+                            self._copy_file(file2_path, file1_path)
+                            # Update sync states
+                            sync_state1.set_last_sync_digest(vault2_path.name, cast_id, digest2)
+                            sync_state2.set_last_sync_digest(vault1_path.name, cast_id, digest2)
+                            result["synced"] += 1
                             result["actions"].append({
-                                "type": "SKIP",
-                                "file": file1_info["path"],
+                                "type": "AUTO_MERGE_VAULT2",
+                                "file": file2_info["path"],
                             })
                     else:
-                        # Non-interactive mode - mark as conflict
-                        result["conflicts"] += 1
-                        result["actions"].append({
-                            "type": "CONFLICT",
-                            "file": file1_info["path"],
-                            "vault1": vault1_path.name,
-                            "vault2": vault2_path.name,
-                        })
+                        # Files are different and can't auto-merge - handle conflict
+                        if overpower:
+                            # Force vault1's version
+                            self._copy_file(file1_path, file2_path)
+                            sync_state1.set_last_sync_digest(vault2_path.name, cast_id, digest1)
+                            sync_state2.set_last_sync_digest(vault1_path.name, cast_id, digest1)
+                            result["synced"] += 1
+                            result["actions"].append({
+                                "type": "OVERPOWER",
+                                "file": file1_info["path"],
+                            })
+                        elif interactive:
+                            # Let user choose
+                            choice = self._resolve_conflict_interactive(
+                                cast_id,
+                                file1_path,
+                                file2_path,
+                                vault1_path.name,
+                                vault2_path.name,
+                            )
+                            
+                            if choice == "1":
+                                self._copy_file(file1_path, file2_path)
+                                sync_state1.set_last_sync_digest(vault2_path.name, cast_id, digest1)
+                                sync_state2.set_last_sync_digest(vault1_path.name, cast_id, digest1)
+                                result["synced"] += 1
+                                result["actions"].append({
+                                    "type": "USE_VAULT1",
+                                    "file": file1_info["path"],
+                                })
+                            elif choice == "2":
+                                self._copy_file(file2_path, file1_path)
+                                sync_state1.set_last_sync_digest(vault2_path.name, cast_id, digest2)
+                                sync_state2.set_last_sync_digest(vault1_path.name, cast_id, digest2)
+                                result["synced"] += 1
+                                result["actions"].append({
+                                    "type": "USE_VAULT2",
+                                    "file": file2_info["path"],
+                                })
+                            else:
+                                result["conflicts"] += 1
+                                result["actions"].append({
+                                    "type": "SKIP",
+                                    "file": file1_info["path"],
+                                })
+                        else:
+                            # Non-interactive mode - mark as conflict
+                            result["conflicts"] += 1
+                            result["actions"].append({
+                                "type": "CONFLICT",
+                                "file": file1_info["path"],
+                                "vault1": vault1_path.name,
+                                "vault2": vault2_path.name,
+                            })
+                else:
+                    # Files are the same - update sync state
+                    if digest1 and digest2:
+                        sync_state1.set_last_sync_digest(vault2_path.name, cast_id, digest1)
+                        sync_state2.set_last_sync_digest(vault1_path.name, cast_id, digest1)
+        
+        # Save sync states
+        sync_state1.save()
+        sync_state2.save()
         
         return result
     

@@ -126,12 +126,14 @@ def init(
     vault_config = VaultConfig.create_default(path, final_vault_id)
     vault_config.save()
     
-    # Create .cast directory structure
+    # Create .cast directory structure (simplified)
     cast_dir = path / ".cast"
-    (cast_dir / "objects").mkdir(parents=True, exist_ok=True)
-    (cast_dir / "peers").mkdir(parents=True, exist_ok=True)
-    (cast_dir / "logs").mkdir(parents=True, exist_ok=True)
-    (cast_dir / "locks").mkdir(parents=True, exist_ok=True)
+    cast_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create empty sync state file
+    sync_state_file = cast_dir / "sync_state.json"
+    if not sync_state_file.exists():
+        sync_state_file.write_text("{}")
     
     # Register in global config
     global_config = GlobalConfig.load_or_create()
@@ -370,6 +372,10 @@ def sync(
                         console.print(f"    ✓ Used current version of {action['file']}")
                     elif action_type == "USE_VAULT2":
                         console.print(f"    ✓ Used {vault_name} version of {action['file']}")
+                    elif action_type == "AUTO_MERGE_VAULT1":
+                        console.print(f"    ⚡ Auto-merged (used current) {action['file']}")
+                    elif action_type == "AUTO_MERGE_VAULT2":
+                        console.print(f"    ⚡ Auto-merged (used {vault_name}) {action['file']}")
                     elif action_type == "CONFLICT":
                         console.print(f"    ⚠ Conflict: {action['file']}")
                     elif action_type == "SKIP":
@@ -547,27 +553,14 @@ def reset(
     
     # Count items to be deleted
     index_file = cast_dir / "index.json"
-    peers_dir = cast_dir / "peers"
-    objects_dir = cast_dir / "objects"
-    logs_dir = cast_dir / "logs"
-    locks_dir = cast_dir / "locks"
+    sync_state_file = cast_dir / "sync_state.json"
     config_file = cast_dir / "config.yaml"
     
     items_to_delete = []
     if index_file.exists():
         items_to_delete.append("• Index file")
-    if peers_dir.exists():
-        peer_count = len(list(peers_dir.glob("*.json")))
-        if peer_count > 0:
-            items_to_delete.append(f"• {peer_count} peer state file(s)")
-    if objects_dir.exists():
-        obj_count = sum(1 for _ in objects_dir.rglob("*") if _.is_file())
-        if obj_count > 0:
-            items_to_delete.append(f"• {obj_count} object(s) in store")
-    if logs_dir.exists() and any(logs_dir.iterdir()):
-        items_to_delete.append("• Log files")
-    if locks_dir.exists() and any(locks_dir.iterdir()):
-        items_to_delete.append("• Lock files")
+    if sync_state_file.exists():
+        items_to_delete.append("• Sync state file")
     
     if items_to_delete:
         console.print("\n[yellow]The following will be deleted:[/yellow]")
@@ -598,41 +591,26 @@ def reset(
     if keep_config and config_file.exists():
         saved_config = config_file.read_text()
     
-    # Delete directories and files
+    # Delete files
     if index_file.exists():
         index_file.unlink()
         console.print("  [green]✓[/green] Index cleared")
     
-    if peers_dir.exists():
-        shutil.rmtree(peers_dir)
-        console.print("  [green]✓[/green] Peer states removed")
-    
-    if objects_dir.exists():
-        shutil.rmtree(objects_dir)
-        console.print("  [green]✓[/green] Object store deleted")
-    
-    if logs_dir.exists():
-        shutil.rmtree(logs_dir)
-        console.print("  [green]✓[/green] Logs cleared")
-    
-    if locks_dir.exists():
-        shutil.rmtree(locks_dir)
-        console.print("  [green]✓[/green] Locks removed")
+    if sync_state_file.exists():
+        sync_state_file.unlink()
+        console.print("  [green]✓[/green] Sync state cleared")
     
     # Recreate directory structure
     cast_dir.mkdir(exist_ok=True)
-    (cast_dir / "peers").mkdir(exist_ok=True)
-    (cast_dir / "objects").mkdir(exist_ok=True)
-    (cast_dir / "logs").mkdir(exist_ok=True)
-    (cast_dir / "locks").mkdir(exist_ok=True)
     
     # Restore config if saved
     if saved_config:
         config_file.write_text(saved_config)
         console.print("  [green]✓[/green] Configuration preserved")
     
-    # Create empty index
+    # Create empty index and sync state
     index_file.write_text("{}")
+    sync_state_file.write_text("{}")
     
     console.print(f"\n[green]✓[/green] Vault reset complete: {vault_path}")
     console.print("[dim]Run 'cast index' to rebuild the index[/dim]")
