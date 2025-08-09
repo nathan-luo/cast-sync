@@ -254,7 +254,7 @@ def plan(
 def sync(
     vault: Optional[str] = typer.Argument(None, help="Vault ID or path (defaults to current directory)"),
     path: Optional[Path] = typer.Option(None, "--path", "-p", help="Vault path"),
-    apply: bool = typer.Option(False, "--apply", help="Apply changes (otherwise dry run)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes without applying"),
     force: bool = typer.Option(False, "--force", help="Force sync even with conflicts"),
     legacy: bool = typer.Option(False, "--legacy", help="Use legacy two-vault sync"),
     source: Optional[str] = typer.Option(None, "--source", help="Source vault (legacy mode)"),
@@ -263,11 +263,11 @@ def sync(
     """Synchronize current vault with all connected vaults.
     
     By default, this command:
-    1. Pulls changes from all other registered vaults
-    2. Detects and reports conflicts
-    3. Applies non-conflicting changes to current vault
-    4. Pushes changes to all other vaults
+    1. Pulls and applies changes from all other registered vaults
+    2. Creates conflict markers if there are conflicts
+    3. Pushes changes to all other vaults (blocked if conflicts exist)
     
+    Use --dry-run to preview without applying changes.
     Use --legacy with --source and --dest for old two-vault sync.
     """
     # Handle legacy mode
@@ -279,7 +279,7 @@ def sync(
         engine = SyncEngine()
         
         try:
-            results = engine.sync(source, dest, apply=apply, force=force)
+            results = engine.sync(source, dest, apply=not dry_run, force=force)
         except ValueError as e:
             console.print(f"[red]Error: {e}[/red]")
             console.print("\n[yellow]Available vaults:[/yellow]")
@@ -289,7 +289,7 @@ def sync(
             raise typer.Exit(1)
         
         # Display legacy results
-        if not apply:
+        if dry_run:
             console.print("[yellow]Dry run mode - no changes applied[/yellow]\n")
         
         table = Table(title="Sync Results (Legacy)")
@@ -331,13 +331,13 @@ def sync(
     engine = MultiVaultSyncEngine()
     
     try:
-        result = engine.sync_all(vault_path, apply=apply, force=force)
+        result = engine.sync_all(vault_path, apply=not dry_run, force=force)
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
     
     # Display results
-    if not apply:
+    if dry_run:
         console.print("[yellow]🔍 Dry run mode - no changes applied[/yellow]\n")
     
     console.print(f"[bold]Syncing vault: {result['current_vault']}[/bold]\n")
@@ -366,7 +366,7 @@ def sync(
         console.print("\n[yellow]Run 'cast resolve' to resolve conflicts interactively.[/yellow]")
     
     # Show push results if applied
-    if apply and result.get("push_results"):
+    if not dry_run and result.get("push_results"):
         push_results = result["push_results"]
         
         # Check if push was blocked
@@ -385,11 +385,11 @@ def sync(
     
     # Summary
     if result["status"] == "completed":
-        if apply:
+        if not dry_run:
             console.print(f"\n[green]✓ Sync completed: {result['applied_changes']} changes applied[/green]")
         else:
             changes_count = result.get("changes_to_apply", 0)
-            console.print(f"\n[cyan]Would apply {changes_count} changes (use --apply to sync)[/cyan]")
+            console.print(f"\n[cyan]Would apply {changes_count} changes (remove --dry-run to sync)[/cyan]")
     elif result["status"] == "conflicts_detected":
         console.print(f"\n[yellow]{result['message']}[/yellow]")
     elif result["status"] == "no_other_vaults":
