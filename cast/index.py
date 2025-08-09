@@ -73,25 +73,15 @@ def index_file(file_path: Path, vault_root: Path, config: VaultConfig) -> dict[s
     if fm_dict is None:
         fm_dict = {}
     
-    # Check for cast-vaults field - skip if not present or empty
-    from cast.cast_vaults import has_cast_vaults
-    if not has_cast_vaults(fm_dict):
-        return None
+    # For multi-vault sync, we index all files with cast-id
+    # The cast-vaults field is optional and used for filtering
     
     # Get or create cast-id
     cast_id = get_cast_id(file_path)
     if not cast_id:
-        # Auto-add cast-id if file has cast-vaults
-        from cast.ids import generate_cast_id, add_cast_id_to_file
-        print(f"  Auto-adding cast-id to {file_path.relative_to(vault_root)}")
-        result = add_cast_id_to_file(file_path)
-        if result["status"] == "added":
-            cast_id = result["uuid"]
-            # Re-read content after modification
-            content = file_path.read_text(encoding="utf-8")
-            fm_dict, _, body = extract_frontmatter(content)
-        else:
-            return None
+        # Skip files without cast-id for now
+        # Could auto-add here if needed
+        return None
     else:
         # Check if cast-id needs to be reordered to first position
         from cast.ids import ensure_cast_id_first

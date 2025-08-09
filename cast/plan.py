@@ -333,30 +333,31 @@ def create_plan(
     
     # Check all files in source index
     for cast_id, src_entry in scan_index.items():
-        # Check if this file should sync to destination vault
+        # For multi-vault sync, we sync all files regardless of cast-vaults
+        # The cast-vaults field can still be used for filtering if present
         cast_vaults = src_entry.get("cast_vaults", [])
-        from cast.cast_vaults import parse_cast_vaults, should_sync_to_vault, VaultRole
         
-        # Skip quickly if dest isn't listed / direction not allowed
-        if not should_sync_to_vault(cast_vaults, src_config.vault_id, dst_config.vault_id):
-            continue
+        # Default mode for multi-vault sync
+        dest_mode = "bidirectional"
         
-        roles = dict(parse_cast_vaults(cast_vaults))
-        src_role = roles.get(src_config.vault_id)
-        dst_role = roles.get(dst_config.vault_id)
-        if not src_role or not dst_role:
-            continue  # must have both ends declared
-        
-        # Map roles to a mode
-        if src_role == VaultRole.CAST and dst_role == VaultRole.SYNC:
-            dest_mode = "broadcast"
-        else:
-            # SYNC→CAST or SYNC→SYNC
-            dest_mode = "bidirectional"
-        
-        # Skip if file doesn't sync to this destination
-        if not dest_mode:
-            continue
+        # If cast-vaults is specified, respect its mode
+        if cast_vaults:
+            from cast.cast_vaults import parse_cast_vaults, should_sync_to_vault, VaultRole
+            
+            # If cast-vaults is specified but doesn't include destination, skip
+            if not should_sync_to_vault(cast_vaults, src_config.vault_id, dst_config.vault_id):
+                continue
+            
+            roles = dict(parse_cast_vaults(cast_vaults))
+            src_role = roles.get(src_config.vault_id)
+            dst_role = roles.get(dst_config.vault_id)
+            
+            # Map roles to a mode if both are declared
+            if src_role and dst_role:
+                if src_role == VaultRole.CAST and dst_role == VaultRole.SYNC:
+                    dest_mode = "broadcast"
+                else:
+                    dest_mode = "bidirectional"
         
         dst_entry = dst_index.get_entry(cast_id)
         

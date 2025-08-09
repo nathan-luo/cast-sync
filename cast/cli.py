@@ -103,6 +103,18 @@ def vaults() -> None:
 
 
 @app.command()
+def register(
+    name: str = typer.Argument(..., help="Vault name for global registry"),
+    path: Path = typer.Argument(..., help="Path to vault"),
+) -> None:
+    """Register a vault in the global config."""
+    config = GlobalConfig.load()
+    config.register_vault(name, str(path.resolve()))
+    config.save()
+    console.print(f"[green]✓[/green] Registered vault '{name}' at {path}")
+
+
+@app.command()
 def init(
     path: Path = typer.Argument(Path.cwd(), help="Vault root directory"),
     vault_id: Optional[str] = typer.Option(None, "--id", help="Vault ID for global config"),
@@ -240,58 +252,142 @@ def plan(
 
 @app.command()
 def sync(
-    source: str = typer.Argument(..., help="Source vault ID (from global config)"),
-    dest: str = typer.Argument(..., help="Destination vault ID (from global config)"),
-    rule: Optional[str] = typer.Option(None, "--rule", "-r", help="Sync rule ID"),
+    vault: Optional[str] = typer.Argument(None, help="Vault ID or path (defaults to current directory)"),
+    path: Optional[Path] = typer.Option(None, "--path", "-p", help="Vault path"),
     apply: bool = typer.Option(False, "--apply", help="Apply changes (otherwise dry run)"),
     force: bool = typer.Option(False, "--force", help="Force sync even with conflicts"),
+    legacy: bool = typer.Option(False, "--legacy", help="Use legacy two-vault sync"),
+    source: Optional[str] = typer.Option(None, "--source", help="Source vault (legacy mode)"),
+    dest: Optional[str] = typer.Option(None, "--dest", help="Destination vault (legacy mode)"),
 ) -> None:
-    """Synchronize vaults according to rules."""
-    engine = SyncEngine()
+    """Synchronize current vault with all connected vaults.
+    
+    By default, this command:
+    1. Pulls changes from all other registered vaults
+    2. Detects and reports conflicts
+    3. Applies non-conflicting changes to current vault
+    4. Pushes changes to all other vaults
+    
+    Use --legacy with --source and --dest for old two-vault sync.
+    """
+    # Handle legacy mode
+    if legacy or (source and dest):
+        if not source or not dest:
+            console.print("[red]Error: Legacy mode requires --source and --dest[/red]")
+            raise typer.Exit(1)
+        
+        engine = SyncEngine()
+        
+        try:
+            results = engine.sync(source, dest, apply=apply, force=force)
+        except ValueError as e:
+            console.print(f"[red]Error: {e}[/red]")
+            console.print("\n[yellow]Available vaults:[/yellow]")
+            config = GlobalConfig.load()
+            for name, path in config.vaults.items():
+                console.print(f"  • {name}: {path}")
+            raise typer.Exit(1)
+        
+        # Display legacy results
+        if not apply:
+            console.print("[yellow]Dry run mode - no changes applied[/yellow]\n")
+        
+        table = Table(title="Sync Results (Legacy)")
+        table.add_column("File", style="cyan")
+        table.add_column("Action", style="bold")
+        table.add_column("Status")
+        
+        for result in results:
+            status_color = "green" if result["success"] else "red"
+            table.add_row(
+                result["file"],
+                result["action"],
+                f"[{status_color}]{result['status']}[/{status_color}]",
+            )
+        
+        console.print(table)
+        return
+    
+    # New multi-vault sync
+    from cast.sync_multi import MultiVaultSyncEngine
+    
+    # Determine vault path
+    if vault:
+        config = GlobalConfig.load()
+        vault_path = config.get_vault_path(vault)
+        if not vault_path:
+            vault_path = Path(vault)
+    elif path:
+        vault_path = path
+    else:
+        vault_path = Path.cwd()
+    
+    # Verify it's a Cast vault
+    if not (vault_path / ".cast" / "config.yaml").exists():
+        console.print(f"[red]Error: {vault_path} is not a Cast vault[/red]")
+        console.print("Run 'cast init' to initialize a vault first.")
+        raise typer.Exit(1)
+    
+    engine = MultiVaultSyncEngine()
     
     try:
-        results = engine.sync(source, dest, rule_id=rule, apply=apply, force=force)
-    except ValueError as e:
+        result = engine.sync_all(vault_path, apply=apply, force=force)
+    except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        console.print("\n[yellow]Available vaults:[/yellow]")
-        config = GlobalConfig.load()
-        for name, path in config.vaults.items():
-            console.print(f"  • {name}: {path}")
         raise typer.Exit(1)
     
     # Display results
     if not apply:
-        console.print("[yellow]Dry run mode - no changes applied[/yellow]\n")
+        console.print("[yellow]🔍 Dry run mode - no changes applied[/yellow]\n")
     
-    table = Table(title="Sync Results")
-    table.add_column("File", style="cyan")
-    table.add_column("Action", style="bold")
-    table.add_column("Status")
+    console.print(f"[bold]Syncing vault: {result['current_vault']}[/bold]\n")
     
-    for result in results:
-        status_color = "green" if result["success"] else "red"
-        table.add_row(
-            result["file"],
-            result["action"],
-            f"[{status_color}]{result['status']}[/{status_color}]",
-        )
+    # Show pull results from each vault
+    if result["pull_results"]:
+        console.print("[bold cyan]📥 Pull Results:[/bold cyan]")
+        for vault_name, pull_result in result["pull_results"].items():
+            summary = pull_result["summary"]
+            conflicts = pull_result["conflicts"]
+            changes = pull_result["changes"]
+            
+            status = "✓" if conflicts == 0 else "⚠"
+            color = "green" if conflicts == 0 else "yellow"
+            
+            console.print(f"  [{color}]{status}[/{color}] {vault_name}:")
+            console.print(f"      Changes: {changes}, Conflicts: {conflicts}")
     
-    console.print(table)
+    # Show conflicts if any
+    if result.get("conflicts"):
+        console.print(f"\n[yellow]⚠ {len(result['conflicts'])} conflict(s) detected:[/yellow]")
+        for conflict in result["conflicts"][:5]:  # Show first 5
+            console.print(f"  • {conflict.get('source_path', conflict.get('dest_path'))}")
+        if len(result["conflicts"]) > 5:
+            console.print(f"  ... and {len(result['conflicts']) - 5} more")
+        console.print("\n[yellow]Run 'cast resolve' to resolve conflicts interactively.[/yellow]")
     
-    conflicts = [r for r in results if r["action"] == "CONFLICT"]
-    if conflicts:
-        console.print(f"\n[red]⚠ {len(conflicts)} conflicts detected[/red]")
+    # Show push results if applied
+    if apply and result.get("push_results"):
+        console.print("\n[bold cyan]📤 Push Results:[/bold cyan]")
+        for vault_name, push_result in result["push_results"].items():
+            summary = push_result["summary"]
+            total = summary.get("total", 0)
+            
+            if total > 0:
+                console.print(f"  [green]✓[/green] {vault_name}: {total} changes pushed")
+            else:
+                console.print(f"  [dim]○[/dim] {vault_name}: up to date")
+    
+    # Summary
+    if result["status"] == "completed":
         if apply:
-            console.print("[yellow]Conflict files created:[/yellow]")
-            for conflict in conflicts:
-                console.print(f"  • {conflict.get('file', 'Unknown')}")
-            console.print("\n[dim]Run 'cast conflicts' to list all conflicts[/dim]")
-            console.print("[dim]Run 'cast resolve' to resolve conflicts interactively[/dim]")
+            console.print(f"\n[green]✓ Sync completed: {result['applied_changes']} changes applied[/green]")
         else:
-            console.print("[yellow]Conflicts would be created for:[/yellow]")
-            for conflict in conflicts:
-                console.print(f"  • {conflict.get('file', 'Unknown')}")
-            console.print("\n[dim]Use --apply --force to create conflict files[/dim]")
+            changes_count = result.get("changes_to_apply", 0)
+            console.print(f"\n[cyan]Would apply {changes_count} changes (use --apply to sync)[/cyan]")
+    elif result["status"] == "conflicts_detected":
+        console.print(f"\n[yellow]{result['message']}[/yellow]")
+    elif result["status"] == "no_other_vaults":
+        console.print(f"\n[dim]{result['message']}[/dim]")
 
 
 @app.command()
