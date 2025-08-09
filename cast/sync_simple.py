@@ -192,11 +192,19 @@ class SimpleSyncEngine:
                     vault1_path / file1_info["path"],
                     vault2_path / file1_info["path"],
                 )
-                # Set sync state after copying
-                digest1 = file1_info.get("body_digest")
-                if digest1:
-                    sync_state1.set_last_sync_digest(vault2_path.name, cast_id, digest1)
-                    sync_state2.set_last_sync_digest(vault1_path.name, cast_id, digest1)
+                # After copying, rebuild vault2's index to get the digest
+                build_index(vault2_path, rebuild=False)
+                # Reload vault2 index to get the new entry
+                with open(vault2_path / ".cast" / "index.json") as f:
+                    vault2_index_updated = json.load(f)
+                # Now get the digest from the updated index
+                if cast_id in vault2_index_updated:
+                    digest = vault2_index_updated[cast_id].get("digest")
+                else:
+                    digest = file1_info.get("digest")
+                if digest:
+                    sync_state1.set_last_sync_digest(vault2_path.name, cast_id, digest)
+                    sync_state2.set_last_sync_digest(vault1_path.name, cast_id, digest)
                 result["synced"] += 1
                 result["actions"].append({
                     "type": "COPY_TO_VAULT2",
@@ -210,11 +218,19 @@ class SimpleSyncEngine:
                         vault2_path / file2_info["path"],
                         vault1_path / file2_info["path"],
                     )
-                    # Set sync state after copying
-                    digest2 = file2_info.get("body_digest")
-                    if digest2:
-                        sync_state1.set_last_sync_digest(vault2_path.name, cast_id, digest2)
-                        sync_state2.set_last_sync_digest(vault1_path.name, cast_id, digest2)
+                    # After copying, rebuild vault1's index to get the digest
+                    build_index(vault1_path, rebuild=False)
+                    # Reload vault1 index to get the new entry
+                    with open(vault1_path / ".cast" / "index.json") as f:
+                        vault1_index_updated = json.load(f)
+                    # Now get the digest from the updated index
+                    if cast_id in vault1_index_updated:
+                        digest = vault1_index_updated[cast_id].get("digest")
+                    else:
+                        digest = file2_info.get("digest")
+                    if digest:
+                        sync_state1.set_last_sync_digest(vault2_path.name, cast_id, digest)
+                        sync_state2.set_last_sync_digest(vault1_path.name, cast_id, digest)
                     result["synced"] += 1
                     result["actions"].append({
                         "type": "COPY_TO_VAULT1",
@@ -228,8 +244,8 @@ class SimpleSyncEngine:
                 file2_path = vault2_path / file2_info["path"]
                 
                 # Get current digests
-                digest1 = file1_info.get("body_digest")
-                digest2 = file2_info.get("body_digest")
+                digest1 = file1_info.get("digest")
+                digest2 = file2_info.get("digest")
                 
                 # If digests missing, compare full content
                 if not digest1 or not digest2:
