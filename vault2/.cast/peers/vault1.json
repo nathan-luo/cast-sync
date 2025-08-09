@@ -1,0 +1,13 @@
+{
+  "files": {
+    "5d8d777b-51ed-4dd2-ba7d-6f8194ce03da": {
+      "base_obj": "sha256:740f8718f8205fc67aa2fc10921861b94ba980a1508ef68b876b240efd1c6bb7",
+      "dest_digest": "sha256:740f8718f8205fc67aa2fc10921861b94ba980a1508ef68b876b240efd1c6bb7",
+      "last_at": "2025-08-09T11:53:55.824518Z",
+      "last_result": "CONFLICT",
+      "source_digest": "sha256:740f8718f8205fc67aa2fc10921861b94ba980a1508ef68b876b240efd1c6bb7"
+    }
+  },
+  "last_sync": "2025-08-09T11:53:55.824543Z",
+  "peer_id": "vault1"
+}

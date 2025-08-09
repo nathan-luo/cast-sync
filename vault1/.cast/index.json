@@ -1,0 +1,17 @@
+{
+  "5d8d777b-51ed-4dd2-ba7d-6f8194ce03da": {
+    "cast_type": "",
+    "cast_vaults": [
+      "vault1 (sync)",
+      "vault2 (sync)"
+    ],
+    "cast_version": "1",
+    "category": "",
+    "digest": "sha256:dfd094e0d30715ae1413cc2d7059586c8818cad991efdbcf1cb3e587b145c50a",
+    "path": "01 Vault/main.md",
+    "size": 246,
+    "tags": [],
+    "title": "main",
+    "updated": "2025-08-09T11:53:55.802034Z"
+  }
+}

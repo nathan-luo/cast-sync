@@ -1,0 +1,18 @@
+# Cast
+.cast/locks/
+.cast/logs/
+*.tmp
+*.conflicted-*
+*.backup
+
+# Obsidian
+.obsidian/workspace*
+.obsidian/cache
+.obsidian/hotkeys.json
+
+# System
+.DS_Store
+Thumbs.db
+
+# Contextr directory
+.contextr/

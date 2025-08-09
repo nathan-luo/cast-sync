@@ -1,0 +1,97 @@
+[project]
+name = "cast-sync"
+dynamic = ["version"]
+description = "Knowledge-aware sync for Markdown vaults (Cast 1.0)"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Nathan's Team", email = "dev@example.com" }]
+dependencies = [
+  "typer>=0.12.3",
+  "pyyaml>=6.0.2",
+  "platformdirs>=4.2.2",
+  "filelock>=3.15.4",
+  "rich>=13.7.1",
+  "pathspec>=0.12.1",
+]
+
+[project.scripts]
+cast = "cast.cli:main"
+
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "cast/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["cast"]
+
+[dependency-groups]
+dev = [
+  "ruff>=0.5.0",
+  "pyright>=1.1.391",
+  "pytest>=8.3.2",
+  "poethepoet>=0.27.0",
+  "pytest-cov>=5.0.0",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+  "A",
+  "E",
+  "F",
+  "I",
+  "N",
+  "T100",
+  "B",
+  "C90",
+  "S",
+  "ARG",
+  "PTH",
+  "SIM",
+  "TRY",
+]
+ignore = ["S101", "TRY003"] # Allow assert in tests, allow reraise
+
+[tool.ruff.lint.isort]
+known-first-party = ["cast"]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+strict = ["**/*.py"]
+pythonVersion = "3.13"
+typeCheckingMode = "strict"
+
+[tool.pytest.ini_options]
+addopts = "--doctest-modules -q --cov=cast --cov-report=term-missing"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["cast"]
+omit = ["tests/*", "**/__main__.py"]
+
+[tool.poe.tasks]
+fmt = "ruff format"
+lint = "ruff check --fix"
+check = "pyright"
+test = "pytest"
+all = ["fmt", "lint", "check", "test"]
+
+# CI versions (no writes)
+"ci:fmt" = "ruff format --check"
+"ci:lint" = "ruff check"
+"ci:all" = ["ci:fmt", "ci:lint", "check", "test"]
+
+# Development shortcuts
+dev = "python -m cast"
+watch = "watchfiles 'uv run poe test' cast tests"
+
+[tool.uv]
+dev-dependencies = ["watchfiles>=0.24.0", "ipython>=8.26.0"]

@@ -1,0 +1,46 @@
+name: pr
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.5.14"
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+      
+      - name: Install dependencies
+        run: |
+          uv sync --all-extras --dev
+          # Fail if lockfile changed
+          git diff --exit-code uv.lock
+      
+      - name: Format check
+        run: uv run poe ci:fmt
+      
+      - name: Lint check
+        run: uv run poe ci:lint
+      
+      - name: Type check
+        run: uv run poe check
+      
+      - name: Run tests
+        run: uv run poe test
+      
+      - name: Upload coverage
+        if: matrix.python-version == '3.13'
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
