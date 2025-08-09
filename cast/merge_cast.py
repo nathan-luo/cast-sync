@@ -128,7 +128,7 @@ def merge_body_blocks(
     src_body: str,
     dst_body: str,
 ) -> tuple[str, list[str]]:
-    """Merge body content using heading-aware diff.
+    """Merge body content using true 3-way merge.
     
     Args:
         base_body: Baseline body
@@ -138,8 +138,6 @@ def merge_body_blocks(
     Returns:
         (merged_body, conflicts)
     """
-    conflicts = []
-    
     # Simple cases
     if src_body == dst_body:
         return src_body, []
@@ -150,44 +148,12 @@ def merge_body_blocks(
     if src_body == base_body:
         return dst_body, []
     
-    # Both changed - split by headings for granular merge
-    base_blocks = split_by_headings(base_body)
-    src_blocks = split_by_headings(src_body)
-    dst_blocks = split_by_headings(dst_body)
+    # Both changed - use proper 3-way merge
+    from cast.merge_simple import smart_three_way_merge
     
-    merged_blocks = []
-    all_headings = get_all_headings(src_blocks, dst_blocks)
+    merged_body, conflicts = smart_three_way_merge(base_body, src_body, dst_body)
     
-    for heading in all_headings:
-        base_block = get_block_content(base_blocks, heading)
-        src_block = get_block_content(src_blocks, heading)
-        dst_block = get_block_content(dst_blocks, heading)
-        
-        if src_block == dst_block:
-            merged_blocks.append((heading, src_block))
-        elif src_block == base_block:
-            merged_blocks.append((heading, dst_block))
-        elif dst_block == base_block:
-            merged_blocks.append((heading, src_block))
-        else:
-            # Conflict
-            conflict_text = f"""<<<<<<< SOURCE
-{src_block}
-=======
-{dst_block}
->>>>>>> DESTINATION"""
-            merged_blocks.append((heading, conflict_text))
-            conflicts.append(f"Conflict in: {heading or 'preface'}")
-    
-    # Reconstruct body
-    lines = []
-    for heading, content in merged_blocks:
-        if heading:
-            lines.append(heading)
-        if content:
-            lines.append(content)
-    
-    return '\n'.join(lines), conflicts
+    return merged_body, conflicts
 
 
 def split_by_headings(text: str) -> list[tuple[str, str]]:

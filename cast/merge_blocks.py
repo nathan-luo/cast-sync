@@ -81,7 +81,7 @@ def merge_body_content(
     src_body: str,
     dst_body: str,
 ) -> tuple[str, list[str]]:
-    """Merge body content using heading-aware diff3.
+    """Merge body content using true 3-way merge.
     
     Args:
         base_body: Baseline body content
@@ -91,8 +91,6 @@ def merge_body_content(
     Returns:
         (merged_body, conflicts)
     """
-    conflicts = []
-    
     # If contents are identical, no merge needed
     if src_body == dst_body:
         return src_body, []
@@ -105,39 +103,11 @@ def merge_body_content(
     if src_body == base_body:
         return dst_body, []
     
-    # Both changed - need to merge
-    # Split by top-level headings for better granularity
-    base_blocks = split_by_headings(base_body)
-    src_blocks = split_by_headings(src_body)
-    dst_blocks = split_by_headings(dst_body)
+    # Both changed - use proper 3-way merge
+    from cast.merge_simple import smart_three_way_merge
     
-    merged_blocks = []
+    merged_body, conflicts = smart_three_way_merge(base_body, src_body, dst_body)
     
-    # Get all unique headings
-    all_headings = get_all_headings(src_blocks, dst_blocks)
-    
-    for heading in all_headings:
-        base_block = get_block_content(base_blocks, heading)
-        src_block = get_block_content(src_blocks, heading)
-        dst_block = get_block_content(dst_blocks, heading)
-        
-        if src_block == dst_block:
-            # No conflict
-            merged_blocks.append((heading, src_block))
-        elif src_block == base_block:
-            # Only dst changed
-            merged_blocks.append((heading, dst_block))
-        elif dst_block == base_block:
-            # Only src changed
-            merged_blocks.append((heading, src_block))
-        else:
-            # Both changed - create conflict
-            conflict_text = create_conflict_block(src_block, base_block, dst_block)
-            merged_blocks.append((heading, conflict_text))
-            conflicts.append(f"Conflict in section: {heading or 'preface'}")
-    
-    # Reconstruct body
-    merged_body = reconstruct_body(merged_blocks)
     return merged_body, conflicts
 
 
