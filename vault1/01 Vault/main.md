@@ -12,6 +12,12 @@ So I was thinking right.
 Yay 2
 
 More text added to vault1
+I think this is great
+I think all of this is great
+So any changes I make
+This is reliable
+And this is better
+asdf
 
 -asdasd
 Different text from vault2

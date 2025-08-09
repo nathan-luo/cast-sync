@@ -79,9 +79,32 @@ def index_file(file_path: Path, vault_root: Path, config: VaultConfig) -> dict[s
     # Get or create cast-id
     cast_id = get_cast_id(file_path)
     if not cast_id:
-        # Skip files without cast-id for now
-        # Could auto-add here if needed
-        return None
+        # Auto-add cast-id if file has cast-vaults or other cast metadata
+        if fm_dict and any(key.startswith("cast-") for key in fm_dict.keys()):
+            # File has cast metadata, add a cast-id
+            from cast.ids import generate_cast_id, ensure_cast_id_first
+            import yaml
+            
+            # Add cast-id to frontmatter
+            new_id = generate_cast_id()
+            fm_dict["cast-id"] = new_id
+            
+            # Reconstruct content with cast-id first
+            fm_yaml = yaml.safe_dump(fm_dict, sort_keys=False, allow_unicode=True)
+            updated_content = f"---\n{fm_yaml}---\n{body}"
+            updated_content = ensure_cast_id_first(updated_content)
+            
+            # Write back to file
+            file_path.write_text(updated_content, encoding="utf-8")
+            content = updated_content
+            cast_id = new_id
+            
+            # Re-extract for consistency
+            fm_dict, _, body = extract_frontmatter(content)
+        
+        # If still no cast-id, skip this file
+        if not cast_id:
+            return None
     else:
         # Check if cast-id needs to be reordered to first position
         from cast.ids import ensure_cast_id_first

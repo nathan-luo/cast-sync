@@ -254,21 +254,19 @@ def plan(
 def sync(
     vault: Optional[str] = typer.Argument(None, help="Vault ID or path (defaults to current directory)"),
     path: Optional[Path] = typer.Option(None, "--path", "-p", help="Vault path"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes without applying"),
-    force: bool = typer.Option(False, "--force", help="Force sync even with conflicts"),
+    overpower: bool = typer.Option(False, "--overpower", help="Force current vault's version to all others"),
+    batch: bool = typer.Option(False, "--batch", help="Non-interactive mode"),
     legacy: bool = typer.Option(False, "--legacy", help="Use legacy two-vault sync"),
     source: Optional[str] = typer.Option(None, "--source", help="Source vault (legacy mode)"),
     dest: Optional[str] = typer.Option(None, "--dest", help="Destination vault (legacy mode)"),
 ) -> None:
     """Synchronize current vault with all connected vaults.
     
-    By default, this command:
-    1. Pulls and applies changes from all other registered vaults
-    2. Creates conflict markers if there are conflicts
-    3. Pushes changes to all other vaults (blocked if conflicts exist)
-    
-    Use --dry-run to preview without applying changes.
-    Use --legacy with --source and --dest for old two-vault sync.
+    Simple and reliable sync:
+    - Detects differences between vaults
+    - Shows both versions for conflicts and lets you choose
+    - Use --overpower to force current vault's version everywhere
+    - Use --batch for non-interactive mode
     """
     # Handle legacy mode
     if legacy or (source and dest):
@@ -308,8 +306,8 @@ def sync(
         console.print(table)
         return
     
-    # New multi-vault sync
-    from cast.sync_multi import MultiVaultSyncEngine
+    # Simple sync
+    from cast.sync_simple import SimpleSyncEngine
     
     # Determine vault path
     if vault:
@@ -328,72 +326,72 @@ def sync(
         console.print("Run 'cast init' to initialize a vault first.")
         raise typer.Exit(1)
     
-    engine = MultiVaultSyncEngine()
+    engine = SimpleSyncEngine()
     
     try:
-        result = engine.sync_all(vault_path, apply=not dry_run, force=force)
+        result = engine.sync_all(vault_path, overpower=overpower, interactive=not batch)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Sync cancelled by user[/yellow]")
+        raise typer.Exit(1)
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
     
     # Display results
-    if dry_run:
-        console.print("[yellow]🔍 Dry run mode - no changes applied[/yellow]\n")
+    console.print(f"\n[bold]Sync Results:[/bold]")
     
-    console.print(f"[bold]Syncing vault: {result['current_vault']}[/bold]\n")
+    if result["status"] == "no_other_vaults":
+        console.print(f"[dim]{result['message']}[/dim]")
+        return
     
-    # Show pull results from each vault
-    if result["pull_results"]:
-        console.print("[bold cyan]📥 Pull Results:[/bold cyan]")
-        for vault_name, pull_result in result["pull_results"].items():
-            summary = pull_result["summary"]
-            conflicts = pull_result["conflicts"]
-            changes = pull_result["changes"]
-            
-            status = "✓" if conflicts == 0 else "⚠"
-            color = "green" if conflicts == 0 else "yellow"
-            
-            console.print(f"  [{color}]{status}[/{color}] {vault_name}:")
-            console.print(f"      Changes: {changes}, Conflicts: {conflicts}")
-    
-    # Show conflicts if any
-    if result.get("conflicts"):
-        console.print(f"\n[yellow]⚠ {len(result['conflicts'])} conflict(s) detected:[/yellow]")
-        for conflict in result["conflicts"][:5]:  # Show first 5
-            console.print(f"  • {conflict.get('source_path', conflict.get('dest_path'))}")
-        if len(result["conflicts"]) > 5:
-            console.print(f"  ... and {len(result['conflicts']) - 5} more")
-        console.print("\n[yellow]Run 'cast resolve' to resolve conflicts interactively.[/yellow]")
-    
-    # Show push results if applied
-    if not dry_run and result.get("push_results"):
-        push_results = result["push_results"]
+    # Show results for each vault
+    for vault_name, vault_result in result["vaults"].items():
+        synced = vault_result["synced"]
+        conflicts = vault_result["conflicts"]
         
-        # Check if push was blocked
-        if isinstance(push_results, dict) and push_results.get("status") == "blocked":
-            console.print(f"\n[red]⚠ Push blocked: {push_results['message']}[/red]")
-        else:
-            console.print("\n[bold cyan]📤 Push Results:[/bold cyan]")
-            for vault_name, push_result in push_results.items():
-                summary = push_result["summary"]
-                total = summary.get("total", 0)
+        if synced > 0 or conflicts > 0:
+            console.print(f"\n[cyan]{vault_name}:[/cyan]")
+            if synced > 0:
+                console.print(f"  [green]✓[/green] {synced} files synced")
+            if conflicts > 0:
+                console.print(f"  [yellow]⚠[/yellow] {conflicts} conflicts remain")
+            
+            # Show actions taken
+            if vault_result["actions"]:
+                for action in vault_result["actions"][:5]:  # Show first 5
+                    action_type = action["type"]
+                    if action_type == "COPY_TO_VAULT1":
+                        console.print(f"    ← Pulled {action['file']}")
+                    elif action_type == "COPY_TO_VAULT2":
+                        console.print(f"    → Pushed {action['file']}")
+                    elif action_type == "OVERPOWER":
+                        console.print(f"    ⚡ Forced {action['file']}")
+                    elif action_type == "USE_VAULT1":
+                        console.print(f"    ✓ Used current version of {action['file']}")
+                    elif action_type == "USE_VAULT2":
+                        console.print(f"    ✓ Used {vault_name} version of {action['file']}")
+                    elif action_type == "CONFLICT":
+                        console.print(f"    ⚠ Conflict: {action['file']}")
+                    elif action_type == "SKIP":
+                        console.print(f"    ○ Skipped {action['file']}")
                 
-                if total > 0:
-                    console.print(f"  [green]✓[/green] {vault_name}: {total} changes pushed")
-                else:
-                    console.print(f"  [dim]○[/dim] {vault_name}: up to date")
+                if len(vault_result["actions"]) > 5:
+                    console.print(f"    ... and {len(vault_result['actions']) - 5} more")
+        else:
+            console.print(f"\n[dim]{vault_name}: Already in sync[/dim]")
     
     # Summary
-    if result["status"] == "completed":
-        if not dry_run:
-            console.print(f"\n[green]✓ Sync completed: {result['applied_changes']} changes applied[/green]")
-        else:
-            changes_count = result.get("changes_to_apply", 0)
-            console.print(f"\n[cyan]Would apply {changes_count} changes (remove --dry-run to sync)[/cyan]")
-    elif result["status"] == "conflicts_detected":
-        console.print(f"\n[yellow]{result['message']}[/yellow]")
-    elif result["status"] == "no_other_vaults":
-        console.print(f"\n[dim]{result['message']}[/dim]")
+    total_synced = result["synced"]
+    total_conflicts = result["conflicts"]
+    
+    console.print(f"\n[bold]Summary:[/bold]")
+    if total_synced > 0:
+        console.print(f"  [green]✓ {total_synced} files synced successfully[/green]")
+    if total_conflicts > 0:
+        console.print(f"  [yellow]⚠ {total_conflicts} conflicts remaining[/yellow]")
+        console.print(f"  [dim]Run 'cast sync' again to resolve remaining conflicts[/dim]")
+    if total_synced == 0 and total_conflicts == 0:
+        console.print(f"  [green]✓ All vaults are in sync![/green]")
 
 
 @app.command()

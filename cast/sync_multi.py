@@ -211,9 +211,9 @@ class MultiVaultSyncEngine:
                 "status": "blocked",
                 "message": "Cannot push - unresolved conflicts exist. Run 'cast resolve' first."
             }
-        elif applied_changes:
-            # Only push if no conflicts
-            # Rebuild index after applying changes
+        else:
+            # Always push current vault's changes to other vaults (unless conflicts)
+            # Rebuild index to ensure we have latest changes
             build_index(current_path, rebuild=False)
             
             for other in other_vaults:

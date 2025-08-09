@@ -1,159 +1,136 @@
 #!/usr/bin/env python3
-"""Simple test for multi-vault sync."""
+"""Test the new simple sync engine."""
 
-import json
 import tempfile
 from pathlib import Path
+from typer.testing import CliRunner
 
-from cast.config import GlobalConfig
+from cast.cli import app
 from cast.index import build_index
-from cast.plan import create_plan
 
 
 def test_simple_sync():
-    """Test basic sync detection."""
+    """Test simple sync with conflicts and overpower."""
+    
+    runner = CliRunner()
     
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
         
-        # Create two test vaults
+        # Create three test vaults
         vault1 = tmpdir / "vault1"
         vault2 = tmpdir / "vault2"
+        vault3 = tmpdir / "vault3"
         
-        # Initialize vaults manually
-        for vault in [vault1, vault2]:
+        for vault in [vault1, vault2, vault3]:
             vault.mkdir()
-            cast_dir = vault / ".cast"
-            cast_dir.mkdir()
-            
-            # Create config with proper patterns
-            config_file = cast_dir / "config.yaml"
-            config_file.write_text(f"""cast-version: "1"
-vault:
-  id: {vault.name}
-  root: {vault}
-index:
-  include:
-    - "01 Vault/**/*.md"
-  exclude:
-    - ".git/**"
-    - ".cast/**"
-    - ".obsidian/**"
-""")
-            
-            # Create objects dir
-            (cast_dir / "objects").mkdir()
-            
-            # Create vault dir
-            (vault / "01 Vault").mkdir()
+            result = runner.invoke(app, ["init", str(vault), "--id", vault.name])
+            assert result.exit_code == 0
         
-        # Register vaults
-        global_config = GlobalConfig.load_or_create()
-        global_config.register_vault("vault1", str(vault1))
-        global_config.register_vault("vault2", str(vault2))
-        global_config.save()
+        print("=== Test 1: Basic sync (file only in vault1) ===")
         
-        # Create a test file in vault1
-        test_file = vault1 / "01 Vault" / "test.md"
-        test_file.write_text("""---
+        # Create file in vault1 (in the indexed directory)
+        (vault1 / "01 Vault").mkdir()
+        test_file1 = vault1 / "01 Vault" / "test.md"
+        test_file1.write_text("""---
 cast-id: 123e4567-e89b-12d3-a456-426614174000
-cast-type: Note
 ---
-# Test Note
-
-This is a test.""")
-        
-        print(f"Test file created: {test_file.exists()}")
-        print(f"Test file path: {test_file}")
-        print(f"Test file size: {test_file.stat().st_size}")
-        
-        # Build indices
-        print("\nBuilding index for vault1...")
-        
-        # Debug: check what select_files finds
-        from cast.select import select_files
-        from cast.config import VaultConfig
-        
-        config = VaultConfig.load(vault1)
-        files = select_files(
-            vault1,
-            include_patterns=config.include_patterns,
-            exclude_patterns=config.exclude_patterns,
-        )
-        print(f"Files found by select_files: {list(files)}")
-        
-        # Try indexing manually
-        from cast.index import index_file
-        from cast.ids import get_cast_id
-        
-        cast_id = get_cast_id(test_file)
-        print(f"Cast ID from file: {cast_id}")
-        
-        result = index_file(test_file, vault1, config)
-        print(f"Manual index result: {result}")
+# Test
+Content from vault1.""")
         
         build_index(vault1, rebuild=True)
         
-        print("Building index for vault2...")
+        # Sync from vault1 (should copy to vault2 and vault3)
+        result = runner.invoke(app, ["sync", str(vault1), "--batch"])
+        print(result.output)
+        if result.exit_code != 0:
+            if result.exception:
+                import traceback
+                traceback.print_exception(type(result.exception), result.exception, result.exception.__traceback__)
+        assert result.exit_code == 0
+        
+        # Check files were created
+        test_file2 = vault2 / "01 Vault" / "test.md"
+        test_file3 = vault3 / "01 Vault" / "test.md"
+        
+        print(f"File in vault2: {test_file2.exists()}")
+        print(f"File in vault3: {test_file3.exists()}")
+        
+        print("\n=== Test 2: Conflict resolution with --overpower ===")
+        
+        # Modify differently in each vault
+        test_file1.write_text("""---
+cast-id: 123e4567-e89b-12d3-a456-426614174000
+---
+# Test
+Modified by vault1.""")
+        
+        test_file2.write_text("""---
+cast-id: 123e4567-e89b-12d3-a456-426614174000
+---
+# Test
+Modified by vault2.""")
+        
+        test_file3.write_text("""---
+cast-id: 123e4567-e89b-12d3-a456-426614174000
+---
+# Test
+Modified by vault3.""")
+        
+        # Rebuild indices
+        for vault in [vault1, vault2, vault3]:
+            build_index(vault, rebuild=True)
+        
+        # Sync with overpower from vault1
+        print("\nForcing vault1's version everywhere with --overpower:")
+        result = runner.invoke(app, ["sync", str(vault1), "--overpower"])
+        print(result.output)
+        assert result.exit_code == 0
+        
+        # Check all vaults have vault1's version
+        print(f"\nvault2 content: {'Modified by vault1' in test_file2.read_text()}")
+        print(f"vault3 content: {'Modified by vault1' in test_file3.read_text()}")
+        
+        print("\n=== Test 3: File only in other vault (pull) ===")
+        
+        # Create new file only in vault2 (in indexed directory)
+        new_file2 = vault2 / "01 Vault" / "new.md"
+        new_file2.write_text("""---
+cast-id: 456e7890-e89b-12d3-a456-426614174000
+---
+# New File
+Created in vault2.""")
+        
         build_index(vault2, rebuild=True)
         
-        # Check indices
-        index1 = vault1 / ".cast" / "index.json"
-        index2 = vault2 / ".cast" / "index.json"
+        # Sync from vault1 (should pull new file)
+        print("\nSyncing from vault1 (should pull new file from vault2):")
+        result = runner.invoke(app, ["sync", str(vault1), "--batch"])
+        print(result.output)
         
-        print(f"\nVault1 index exists: {index1.exists()}")
-        if index1.exists():
-            data = json.loads(index1.read_text())
-            print(f"Index keys: {list(data.keys())}")
-            if 'files' in data:
-                print(f"Vault1 files: {len(data['files'])} files")
-                for cast_id, entry in data['files'].items():
-                    print(f"  - {cast_id}: {entry['path']}")
-            else:
-                print(f"Vault1 entries: {len(data)} entries")
-                for cast_id, entry in list(data.items())[:5]:
-                    print(f"  - {cast_id}: {entry}")
+        new_file1 = vault1 / "01 Vault" / "new.md"
+        print(f"\nNew file pulled to vault1: {new_file1.exists()}")
+        if new_file1.exists():
+            print(f"Content correct: {'Created in vault2' in new_file1.read_text()}")
         
-        print(f"\nVault2 index exists: {index2.exists()}")
-        if index2.exists():
-            data = json.loads(index2.read_text())
-            if 'files' in data:
-                print(f"Vault2 files: {len(data['files'])} files")
-            else:
-                print(f"Vault2 entries: {len(data)} entries")
+        print("\n=== Test 4: Everything in sync ===")
         
-        # Create plan from vault1 to vault2
-        print("\n=== Creating plan from vault1 to vault2 ===")
-        plan = create_plan("vault1", "vault2")
+        # First sync from vault1 to push new file to vault3
+        result = runner.invoke(app, ["sync", str(vault1), "--batch"])
         
-        print(f"Plan summary: {plan['summary']}")
-        print(f"Actions: {len(plan['actions'])} actions")
-        for action in plan['actions']:
-            print(f"  - {action['type']}: {action.get('source_path', action.get('dest_path'))}")
+        # Rebuild indices
+        for vault in [vault1, vault2, vault3]:
+            build_index(vault, rebuild=True)
         
-        # Now test multi-vault sync
-        from cast.sync_multi import MultiVaultSyncEngine
+        # Sync again - should show everything in sync
+        print("\nSyncing when everything is already in sync:")
+        result = runner.invoke(app, ["sync", str(vault1), "--batch"])
+        print(result.output)
         
-        print("\n=== Testing multi-vault sync from vault2 ===")
-        engine = MultiVaultSyncEngine()
-        
-        result = engine.sync_all(vault2, apply=False)
-        print(f"Status: {result['status']}")
-        print(f"Pull results: {result['pull_results']}")
-        
-        # Apply the sync
-        print("\n=== Applying sync ===")
-        result = engine.sync_all(vault2, apply=True)
-        print(f"Status: {result['status']}")
-        print(f"Applied changes: {result.get('applied_changes', 0)}")
-        
-        # Check if file was created
-        synced_file = vault2 / "01 Vault" / "test.md"
-        print(f"\nFile synced to vault2: {synced_file.exists()}")
-        if synced_file.exists():
-            print(f"Content preview: {synced_file.read_text()[:100]}...")
-        
-        print("\n✓ Test completed!")
+        if "All vaults are in sync" in result.output:
+            print("\n✓ Simple sync test passed!")
+        else:
+            print("\n✗ Test failed")
 
 
 if __name__ == "__main__":
