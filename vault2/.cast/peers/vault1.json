@@ -1,5 +1,10 @@
 {
-  "files": {},
-  "last_sync": "2025-08-09T14:15:15.137914Z",
+  "files": {
+    "23bf51c0-0ab7-4398-8306-b00afd7724b1": {
+      "last_at": "2025-08-09T14:36:16.448157Z",
+      "last_result": "CONFLICT"
+    }
+  },
+  "last_sync": "2025-08-09T14:36:16.448604Z",
   "peer_id": "vault1"
 }

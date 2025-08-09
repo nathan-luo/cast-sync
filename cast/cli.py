@@ -367,15 +367,21 @@ def sync(
     
     # Show push results if applied
     if apply and result.get("push_results"):
-        console.print("\n[bold cyan]📤 Push Results:[/bold cyan]")
-        for vault_name, push_result in result["push_results"].items():
-            summary = push_result["summary"]
-            total = summary.get("total", 0)
-            
-            if total > 0:
-                console.print(f"  [green]✓[/green] {vault_name}: {total} changes pushed")
-            else:
-                console.print(f"  [dim]○[/dim] {vault_name}: up to date")
+        push_results = result["push_results"]
+        
+        # Check if push was blocked
+        if isinstance(push_results, dict) and push_results.get("status") == "blocked":
+            console.print(f"\n[red]⚠ Push blocked: {push_results['message']}[/red]")
+        else:
+            console.print("\n[bold cyan]📤 Push Results:[/bold cyan]")
+            for vault_name, push_result in push_results.items():
+                summary = push_result["summary"]
+                total = summary.get("total", 0)
+                
+                if total > 0:
+                    console.print(f"  [green]✓[/green] {vault_name}: {total} changes pushed")
+                else:
+                    console.print(f"  [dim]○[/dim] {vault_name}: up to date")
     
     # Summary
     if result["status"] == "completed":
