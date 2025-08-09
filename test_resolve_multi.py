@@ -75,16 +75,14 @@ Original content from vault1.""")
         result = engine.sync_all(vault3, apply=True)
         print(f"Status: {result['status']}")
         
-        # Now modify the file differently in each vault
+        # Now modify the SAME line differently in each vault to create real conflicts
         test_file1.write_text("""---
 cast-id: 123e4567-e89b-12d3-a456-426614174000
 cast-type: Note
 ---
 # Test Note
 
-Original content from vault1.
-
-Added in vault1.""")
+Modified by vault1.""")
         
         test_file2 = vault2 / "test.md"
         test_file2.write_text("""---
@@ -93,9 +91,7 @@ cast-type: Note
 ---
 # Test Note
 
-Original content from vault1.
-
-Added in vault2.""")
+Modified by vault2.""")
         
         test_file3 = vault3 / "test.md"
         test_file3.write_text("""---
@@ -104,9 +100,7 @@ cast-type: Note
 ---
 # Test Note
 
-Original content from vault1.
-
-Added in vault3.""")
+Modified by vault3.""")
         
         # Rebuild indices
         for vault in [vault1, vault2, vault3]:
@@ -125,8 +119,8 @@ Added in vault3.""")
         result = engine.sync_all(vault3, apply=True, force=True)
         print(f"Status: {result['status']}")
         print(f"Conflicts reported: {len(result.get('conflicts', []))}")
-        if result.get('applied_changes'):
-            print(f"Applied changes: {result['applied_changes']}")
+        print(f"Applied changes: {result.get('applied_changes', 0)}")
+        print(f"Pull results: {result.get('pull_results', {})}")
         
         # Check if conflict markers exist in vault3
         content = test_file3.read_text()

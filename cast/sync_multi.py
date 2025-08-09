@@ -111,8 +111,12 @@ class MultiVaultSyncEngine:
                     "source_vault": other_name,
                 } for c in conflicts)
             
-            # Track changes
-            changes = [a for a in plan["actions"] if a["type"] in ["CREATE", "UPDATE", "MERGE"]]
+            # Track changes (include conflicts when force is True)
+            if force:
+                changes = [a for a in plan["actions"] if a["type"] in ["CREATE", "UPDATE", "MERGE", "CONFLICT"]]
+            else:
+                changes = [a for a in plan["actions"] if a["type"] in ["CREATE", "UPDATE", "MERGE"]]
+            
             if changes:
                 changes_to_apply.extend({
                     **c,
@@ -167,18 +171,28 @@ class MultiVaultSyncEngine:
             
             # Apply each unique change
             for cast_id, changes in changes_by_id.items():
-                # Use the most recent change if multiple vaults have same file
-                # TODO: This could be smarter - merge from multiple sources
-                change = changes[0]  # For now, just take first
-                
-                result = self._apply_change(
-                    change,
-                    Path(change["source_path_full"]),
-                    current_path,
-                    current_config,
-                    force=force,
-                )
-                applied_changes.append(result)
+                # Handle multiple changes for the same file (N-way merge)
+                if len(changes) == 1:
+                    # Single change - apply normally
+                    change = changes[0]
+                    result = self._apply_change(
+                        change,
+                        Path(change["source_path_full"]),
+                        current_path,
+                        current_config,
+                        force=force,
+                    )
+                    applied_changes.append(result)
+                else:
+                    # Multiple changes - need N-way merge
+                    result = self._apply_multi_changes(
+                        cast_id,
+                        changes,
+                        current_path,
+                        current_config,
+                        force=force,
+                    )
+                    applied_changes.append(result)
             
             # Update peer states for all synced vaults
             for other in other_vaults:
@@ -425,13 +439,13 @@ class MultiVaultSyncEngine:
         src_peer = PeerState(src_path, dst_config.vault_id)
         src_peer.load()
         
-        baseline_entry = src_peer.get_baseline(action["cast_id"])
-        if baseline_entry and "digest" in baseline_entry:
-            base_content = dst_objects.get(baseline_entry["digest"])
+        base_digest = src_peer.get_base_digest(action["cast_id"])
+        if base_digest:
+            base_content = dst_objects.read(base_digest)
             if base_content is None:
                 # Try source objects
                 src_objects = ObjectStore(src_path)
-                base_content = src_objects.get(baseline_entry["digest"])
+                base_content = src_objects.read(base_digest)
         else:
             base_content = ""
         
@@ -469,9 +483,166 @@ class MultiVaultSyncEngine:
             
             # Store merged content
             merged_digest = compute_normalized_digest(merged_content)
-            dst_objects.put(merged_digest, merged_content)
+            dst_objects.write(merged_digest, merged_content)
         
         return conflicts
+    
+    def _apply_multi_changes(
+        self,
+        cast_id: str,
+        changes: list[dict[str, Any]],
+        dest_path: Path,
+        dest_config: VaultConfig,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """Apply multiple changes for the same file (N-way merge).
+        
+        This handles the case where multiple vaults have changes to the same file.
+        We need to merge all of them together.
+        
+        Args:
+            cast_id: Cast ID of the file
+            changes: List of changes from different vaults
+            dest_path: Destination vault path
+            dest_config: Destination vault config
+            force: Force changes even with conflicts
+            
+        Returns:
+            Result of applying the merged changes
+        """
+        result = {
+            "file": changes[0].get("source_path") or changes[0].get("dest_path"),
+            "cast_id": cast_id,
+            "action": "N_WAY_MERGE",
+            "source_vaults": [c.get("source_vault") for c in changes],
+            "success": False,
+            "status": "pending",
+        }
+        
+        # Get the destination file path
+        dest_file = None
+        for change in changes:
+            if change.get("dest_path"):
+                dest_file = dest_path / change["dest_path"]
+                break
+            elif change.get("source_path"):
+                dest_file = dest_path / change["source_path"]
+                break
+        
+        if not dest_file:
+            result["status"] = "error: no file path"
+            return result
+        
+        # Read current destination content if it exists
+        if dest_file.exists():
+            dest_content = dest_file.read_text(encoding="utf-8")
+        else:
+            dest_content = ""
+        
+        # Get baseline (common ancestor)
+        # For N-way merge, we need to find the common baseline
+        base_content = ""
+        dst_objects = ObjectStore(dest_path)
+        
+        for change in changes:
+            source_vault = change.get("source_vault")
+            if source_vault:
+                peer = PeerState(dest_path, source_vault)
+                peer.load()
+                base_digest = peer.get_base_digest(cast_id)
+                if base_digest:
+                    base_content = dst_objects.read(base_digest)
+                    if base_content:
+                        break
+        
+        if not base_content:
+            base_content = ""
+        
+        # Collect all source contents
+        source_contents = []
+        for change in changes:
+            source_path = Path(change["source_path_full"])
+            source_file = source_path / change.get("source_path", change.get("dest_path", ""))
+            if source_file.exists():
+                source_contents.append({
+                    "vault": change.get("source_vault"),
+                    "content": source_file.read_text(encoding="utf-8"),
+                })
+        
+        # Perform N-way merge
+        if len(source_contents) == 0:
+            result["status"] = "error: no source files"
+            return result
+        elif len(source_contents) == 1:
+            # Only one source - regular 3-way merge
+            merged_content, conflicts = merge_cast_content(
+                base_content,
+                source_contents[0]["content"],
+                dest_content,
+            )
+        else:
+            # Multiple sources - need N-way merge
+            # Strategy: merge sources sequentially with the destination
+            # Start with the first source merged with destination
+            merged_content, conflicts = merge_cast_content(
+                base_content,
+                source_contents[0]["content"],
+                dest_content,
+            )
+            
+            # Then merge each additional source
+            for i in range(1, len(source_contents)):
+                # Use the previous merge result as the new destination
+                additional_merged, additional_conflicts = merge_cast_content(
+                    base_content,
+                    source_contents[i]["content"],
+                    merged_content,
+                )
+                merged_content = additional_merged
+                conflicts.extend(additional_conflicts)
+        
+        # Handle conflicts
+        has_conflicts = len(conflicts) > 0
+        
+        if has_conflicts and not force:
+            result["success"] = False
+            result["status"] = f"conflicts ({len(conflicts)} unresolved)"
+            return result
+        
+        # Write the merged content
+        if dest_file.parent.exists():
+            dest_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        temp_file = dest_file.with_suffix(".tmp")
+        temp_file.write_text(merged_content, encoding="utf-8")
+        temp_file.replace(dest_file)
+        
+        # Update peer states
+        for change in changes:
+            source_vault = change.get("source_vault")
+            if source_vault:
+                peer = PeerState(dest_path, source_vault)
+                peer.load()
+                if has_conflicts:
+                    peer.update_file_state(cast_id, last_result="CONFLICT")
+                else:
+                    peer.update_file_state(cast_id, last_result="MERGED")
+                peer.save()
+        
+        # Store merged content if no conflicts
+        if not has_conflicts:
+            merged_digest = compute_normalized_digest(merged_content)
+            dst_objects.write(merged_digest, merged_content)
+        
+        # Set result
+        if has_conflicts:
+            result["success"] = False
+            result["status"] = f"merged with {len(conflicts)} conflicts"
+        else:
+            result["success"] = True
+            result["status"] = "merged (N-way)"
+        
+        return result
 
 
 # Keep the old SyncEngine for backward compatibility
