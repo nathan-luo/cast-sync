@@ -173,8 +173,6 @@ def merge_body_blocks(
             # Conflict
             conflict_text = f"""<<<<<<< SOURCE
 {src_block}
-||||||| BASE
-{base_block}
 =======
 {dst_block}
 >>>>>>> DESTINATION"""

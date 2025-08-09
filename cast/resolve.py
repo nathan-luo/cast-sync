@@ -69,7 +69,7 @@ class ConflictResolver:
         vault_root: Path,
         files: list[Path] | None = None,
         interactive: bool = True,
-        auto_mode: str = "ask",  # ask, source, dest, base
+        auto_mode: str = "ask",  # ask, source, dest
     ) -> list[dict[str, Any]]:
         """Resolve conflicts in files.
         
@@ -77,7 +77,7 @@ class ConflictResolver:
             vault_root: Vault root directory
             files: Specific files to resolve (or find all)
             interactive: Use interactive mode
-            auto_mode: How to auto-resolve (ask, source, dest, base)
+            auto_mode: How to auto-resolve (ask, source, dest)
             
         Returns:
             List of resolution results
@@ -155,30 +155,15 @@ class ConflictResolver:
         for i, conflict in enumerate(conflicts, 1):
             self.console.print(f"[bold yellow]━━━ Conflict {i}/{len(conflicts)} ━━━[/bold yellow]")
             
-            # Show each version in panels
-            if conflict.get("base"):
-                # 3-way conflict
-                self.console.print("\n[bold cyan]1) SOURCE version:[/bold cyan] [dim](from sync source)[/dim]")
-                self._show_content(conflict["source"], "markdown")
-                
-                self.console.print("\n[bold magenta]2) BASE version:[/bold magenta] [dim](common ancestor)[/dim]")
-                self._show_content(conflict["base"], "markdown")
-                
-                self.console.print("\n[bold green]3) DESTINATION version:[/bold green] [dim](your local changes)[/dim]")
-                self._show_content(conflict["dest"], "markdown")
-                
-                choices = ["1", "2", "3", "edit", "skip"]
-                choice_map = {"1": "source", "2": "base", "3": "dest"}
-            else:
-                # 2-way conflict
-                self.console.print("\n[bold cyan]1) SOURCE version:[/bold cyan] [dim](from sync source)[/dim]")
-                self._show_content(conflict["source"], "markdown")
-                
-                self.console.print("\n[bold green]2) DESTINATION version:[/bold green] [dim](your local changes)[/dim]")
-                self._show_content(conflict["dest"], "markdown")
-                
-                choices = ["1", "2", "edit", "skip"]
-                choice_map = {"1": "source", "2": "dest"}
+            # Show each version in panels (2-way conflicts only)
+            self.console.print("\n[bold cyan]1) SOURCE version:[/bold cyan] [dim](from sync source)[/dim]")
+            self._show_content(conflict["source"], "markdown")
+            
+            self.console.print("\n[bold green]2) DESTINATION version:[/bold green] [dim](your local changes)[/dim]")
+            self._show_content(conflict["dest"], "markdown")
+            
+            choices = ["1", "2", "edit", "skip"]
+            choice_map = {"1": "source", "2": "dest"}
             
             # Get choice
             choice = Prompt.ask(
@@ -254,8 +239,6 @@ class ConflictResolver:
                 resolved_content = resolved_content.replace(conflict["full"], conflict["source"])
             elif mode == "dest":
                 resolved_content = resolved_content.replace(conflict["full"], conflict["dest"])
-            elif mode == "base" and conflict.get("base"):
-                resolved_content = resolved_content.replace(conflict["full"], conflict["base"])
         
         # Save resolved file
         target = self._get_target_file(file_path)
@@ -278,37 +261,14 @@ class ConflictResolver:
         """Parse conflict markers from content."""
         conflicts = []
         
-        # Pattern for 3-way conflicts with base
-        pattern_3way = re.compile(
-            r"<<<<<<< ([^\n]+)\n(.*?)\n\|\|\|\|\|\|\| ([^\n]+)\n(.*?)\n=======\n(.*?)\n>>>>>>> ([^\n]+)",
-            re.DOTALL,
-        )
-        
-        # Pattern for 2-way conflicts
+        # Pattern for 2-way conflicts (Git-style)
         pattern_2way = re.compile(
             r"<<<<<<< ([^\n]+)\n(.*?)\n=======\n(.*?)\n>>>>>>> ([^\n]+)",
             re.DOTALL,
         )
         
-        # Find 3-way conflicts first
-        for match in pattern_3way.finditer(content):
-            conflicts.append({
-                "full": match.group(0),
-                "source_label": match.group(1),
-                "source": match.group(2),
-                "base_label": match.group(3),
-                "base": match.group(4),
-                "dest": match.group(5),
-                "dest_label": match.group(6),
-            })
-        
-        # Remove 3-way conflicts from content to avoid double-matching
-        temp_content = content
-        for conflict in conflicts:
-            temp_content = temp_content.replace(conflict["full"], "<<<RESOLVED>>>")
-        
         # Find 2-way conflicts
-        for match in pattern_2way.finditer(temp_content):
+        for match in pattern_2way.finditer(content):
             conflicts.append({
                 "full": match.group(0),
                 "source_label": match.group(1),

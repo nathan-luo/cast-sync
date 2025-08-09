@@ -354,7 +354,7 @@ def merge_body_blocks(
             merger = difflib.Differ()
             
             # For now, create conflict markers
-            conflict_text = f"<<<<<<< SRC\n{src_content}\n||||||| BASE\n{base_content}\n=======\n{dst_content}\n>>>>>>> DST"
+            conflict_text = f"<<<<<<< SRC\n{src_content}\n=======\n{dst_content}\n>>>>>>> DST"
             merged_blocks.append((heading, conflict_text))
             conflicts.append(f"Block conflict in: {heading or 'preface'}")
     

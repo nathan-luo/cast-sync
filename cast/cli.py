@@ -300,7 +300,7 @@ def resolve(
     path: Optional[Path] = typer.Option(None, "--path", "-p", help="Vault path"),
     files: Optional[list[Path]] = typer.Argument(None, help="Specific files to resolve"),
     interactive: bool = typer.Option(True, "--interactive/--batch", help="Interactive mode"),
-    auto: str = typer.Option("source", help="Auto-resolve mode: source, dest, base"),
+    auto: str = typer.Option("source", help="Auto-resolve mode: source, dest"),
 ) -> None:
     """Resolve sync conflicts interactively."""
     # Determine vault path

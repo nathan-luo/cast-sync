@@ -208,8 +208,6 @@ def create_conflict_block(src: str, base: str, dst: str) -> str:
     """Create a conflict block with markers."""
     return f"""<<<<<<< SOURCE
 {src}
-||||||| BASE
-{base}
 =======
 {dst}
 >>>>>>> DESTINATION"""
