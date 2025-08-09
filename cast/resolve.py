@@ -27,39 +27,63 @@ class ConflictResolver:
             self.console.print("[green]No conflicts found![/green]")
             return []
         
-        # Create table
-        table = Table(title=f"Conflicts in {vault_root}")
-        table.add_column("File", style="cyan")
-        table.add_column("Original", style="yellow")
-        table.add_column("Created", style="dim")
-        table.add_column("Conflicts", style="red")
+        # Separate old-style and in-file conflicts
+        old_style = [f for f in conflict_files if ".conflicted-" in f.name]
+        in_file = [f for f in conflict_files if ".conflicted-" not in f.name]
         
-        for conflict_file in conflict_files:
-            # Parse filename to get original
-            original = self._get_target_file(conflict_file)
+        if old_style:
+            # Create table for old-style conflicts
+            table = Table(title=f"Old-style Conflicts (.conflicted-* files)")
+            table.add_column("File", style="cyan")
+            table.add_column("Original", style="yellow")
+            table.add_column("Created", style="dim")
+            table.add_column("Conflicts", style="red")
             
-            # Get timestamp from filename
-            match = re.search(r"conflicted-(\d{8})-(\d{6})", conflict_file.name)
-            if match:
-                date_str = match.group(1)
-                time_str = match.group(2)
-                timestamp = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]} {time_str[:2]}:{time_str[2:4]}"
-            else:
-                timestamp = "Unknown"
+            for conflict_file in old_style:
+                # Parse filename to get original
+                original = self._get_target_file(conflict_file)
+                
+                # Get timestamp from filename
+                match = re.search(r"conflicted-(\d{8})-(\d{6})", conflict_file.name)
+                if match:
+                    date_str = match.group(1)
+                    time_str = match.group(2)
+                    timestamp = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]} {time_str[:2]}:{time_str[2:4]}"
+                else:
+                    timestamp = "Unknown"
+                
+                # Count conflicts in file
+                content = conflict_file.read_text(encoding="utf-8")
+                conflicts = self._parse_conflicts(content)
+                
+                table.add_row(
+                    conflict_file.name,
+                    original.name,
+                    timestamp,
+                    str(len(conflicts))
+                )
             
-            # Count conflicts in file
-            content = conflict_file.read_text(encoding="utf-8")
-            conflicts = self._parse_conflicts(content)
-            
-            table.add_row(
-                conflict_file.name,
-                original.name,
-                timestamp,
-                str(len(conflicts))
-            )
+            self.console.print(table)
         
-        self.console.print(table)
-        self.console.print(f"\n[yellow]Total: {len(conflict_files)} conflict file(s)[/yellow]")
+        if in_file:
+            # Create table for in-file conflicts
+            table = Table(title=f"Files with Conflict Markers")
+            table.add_column("File", style="cyan")
+            table.add_column("Conflicts", style="red")
+            
+            for conflict_file in in_file:
+                # Count conflicts in file
+                content = conflict_file.read_text(encoding="utf-8")
+                conflicts = self._parse_conflicts(content)
+                
+                table.add_row(
+                    str(conflict_file.relative_to(vault_root)),
+                    str(len(conflicts))
+                )
+            
+            self.console.print(table)
+        
+        self.console.print(f"\n[yellow]Total: {len(conflict_files)} file(s) with conflicts[/yellow]")
         self.console.print("[dim]Run 'cast resolve' to resolve conflicts interactively[/dim]")
         
         return conflict_files
@@ -122,9 +146,27 @@ class ConflictResolver:
         return results
     
     def _find_conflict_files(self, vault_root: Path) -> list[Path]:
-        """Find all conflict files in vault."""
+        """Find all files with conflicts (either .conflicted-* or files with conflict markers)."""
+        conflict_files = []
+        
+        # First, find old-style .conflicted-* files
         pattern = "*.conflicted-*.md"
-        return sorted(vault_root.glob(f"**/{pattern}"))
+        conflict_files.extend(vault_root.glob(f"**/{pattern}"))
+        
+        # Also find regular .md files that contain conflict markers
+        for md_file in vault_root.glob("**/*.md"):
+            # Skip .conflicted-* files and .cast directory
+            if ".conflicted-" in md_file.name or ".cast" in str(md_file):
+                continue
+            
+            try:
+                content = md_file.read_text(encoding="utf-8")
+                if "<<<<<<< " in content and "=======" in content and ">>>>>>> " in content:
+                    conflict_files.append(md_file)
+            except (UnicodeDecodeError, IOError):
+                continue
+        
+        return sorted(set(conflict_files))
     
     def _resolve_interactive(self, file_path: Path, vault_root: Path) -> dict[str, Any]:
         """Resolve a conflict file interactively."""
@@ -146,8 +188,14 @@ class ConflictResolver:
             return result
         
         # Show conflict details
-        original_file = self._get_target_file(file_path)
-        self.console.print(f"[dim]Original file: {original_file.relative_to(vault_root)}[/dim]")
+        # Check if this is a .conflicted-* file or a regular file with conflicts
+        if ".conflicted-" in file_path.name:
+            original_file = self._get_target_file(file_path)
+            self.console.print(f"[dim]Original file: {original_file.relative_to(vault_root)}[/dim]")
+        else:
+            original_file = file_path
+            self.console.print(f"[dim]File: {original_file.relative_to(vault_root)}[/dim]")
+        
         self.console.print(f"[dim]Number of conflicts: {len(conflicts)}[/dim]\n")
         
         resolved_content = content
@@ -197,17 +245,25 @@ class ConflictResolver:
         self.console.print("\n" + "─" * 40)
         if Confirm.ask("\n[bold]Save resolved file?[/bold]", default=True):
             # Determine target file
-            target = self._get_target_file(file_path)
-            
-            # Remove original if it exists (no backup needed)
-            if target.exists():
-                target.unlink()
-            
-            # Write resolved content
-            target.write_text(resolved_content, encoding="utf-8")
-            
-            # Remove conflict file
-            file_path.unlink()
+            if ".conflicted-" in file_path.name:
+                # Old-style conflict file - save to original location
+                target = self._get_target_file(file_path)
+                
+                # Remove original if it exists (no backup needed)
+                if target.exists():
+                    target.unlink()
+                
+                # Write resolved content
+                target.write_text(resolved_content, encoding="utf-8")
+                
+                # Remove conflict file
+                file_path.unlink()
+            else:
+                # In-place conflict resolution - save directly
+                target = file_path
+                
+                # Write resolved content (overwrites the file)
+                target.write_text(resolved_content, encoding="utf-8")
             
             # Update peer states to mark as resolved
             self._update_peer_states(target, vault_root)
@@ -241,13 +297,19 @@ class ConflictResolver:
                 resolved_content = resolved_content.replace(conflict["full"], conflict["dest"])
         
         # Save resolved file
-        target = self._get_target_file(file_path)
-        
-        if target.exists():
-            target.unlink()
-        
-        target.write_text(resolved_content, encoding="utf-8")
-        file_path.unlink()
+        if ".conflicted-" in file_path.name:
+            # Old-style conflict file
+            target = self._get_target_file(file_path)
+            
+            if target.exists():
+                target.unlink()
+            
+            target.write_text(resolved_content, encoding="utf-8")
+            file_path.unlink()
+        else:
+            # In-place resolution
+            target = file_path
+            target.write_text(resolved_content, encoding="utf-8")
         
         # Update peer states
         self._update_peer_states(target, vault_root)

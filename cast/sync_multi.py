@@ -447,14 +447,29 @@ class MultiVaultSyncEngine:
             base_content, src_content, dst_content
         )
         
-        # Write merged content
-        temp_file = dst_file.with_suffix(".tmp")
-        temp_file.write_text(merged_content, encoding="utf-8")
-        temp_file.replace(dst_file)
-        
-        # Store merged content
-        merged_digest = compute_normalized_digest(merged_content)
-        dst_objects.put(merged_digest, merged_content)
+        if conflicts:
+            # When there are conflicts, write the merged content WITH conflict markers to the main file
+            # This allows cast resolve to find and resolve them in place
+            temp_file = dst_file.with_suffix(".tmp")
+            temp_file.write_text(merged_content, encoding="utf-8")
+            temp_file.replace(dst_file)
+            
+            # Mark peer state as conflict
+            # We need the source vault ID - get it from the action
+            src_vault_id = action.get("source_vault", "unknown")
+            dst_peer = PeerState(dst_path, src_vault_id)
+            dst_peer.load()
+            dst_peer.update_file_state(action["cast_id"], last_result="CONFLICT")
+            dst_peer.save()
+        else:
+            # Clean merge - write to file
+            temp_file = dst_file.with_suffix(".tmp")
+            temp_file.write_text(merged_content, encoding="utf-8")
+            temp_file.replace(dst_file)
+            
+            # Store merged content
+            merged_digest = compute_normalized_digest(merged_content)
+            dst_objects.put(merged_digest, merged_content)
         
         return conflicts
 
