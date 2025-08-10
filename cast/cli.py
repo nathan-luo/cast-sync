@@ -201,10 +201,10 @@ def vault_obsidian(
 def index(
     path: Path = typer.Argument(Path.cwd(), help="Vault root directory"),
     rebuild: bool = typer.Option(False, "--rebuild", help="Force full index rebuild"),
-    fix: bool = typer.Option(False, "--fix", help="Automatically add cast-id to files with cast metadata"),
+    no_auto: bool = typer.Option(False, "--no-auto", help="Don't automatically add cast-id to files with cast metadata"),
 ) -> None:
     """Build or update the vault index."""
-    index_data = build_index(path, rebuild=rebuild, auto_fix=fix)
+    index_data = build_index(path, rebuild=rebuild, auto_fix=not no_auto)
     
     console.print(f"[green]✓[/green] Index updated")
     console.print(f"  Files indexed: {len(index_data)}")

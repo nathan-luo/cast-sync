@@ -120,8 +120,9 @@ class SimpleSyncEngine:
                 "message": "No other vaults found to sync with",
             }
         
-        # Build indices
-        build_index(current_path, rebuild=False)
+        # Auto-index all vaults with auto-fix enabled (to add cast-ids)
+        print(f"Indexing {current_id}...")
+        build_index(current_path, rebuild=False, auto_fix=True)
         index_file = current_path / ".cast" / "index.json"
         with open(index_file) as f:
             current_index = json.load(f)
@@ -138,7 +139,8 @@ class SimpleSyncEngine:
             other_path = other["path"]
             other_name = other["name"]
             
-            build_index(other_path, rebuild=False)
+            print(f"Indexing {other_name}...")
+            build_index(other_path, rebuild=False, auto_fix=True)
             index_file = other_path / ".cast" / "index.json"
             with open(index_file) as f:
                 other_index = json.load(f)
@@ -341,8 +343,8 @@ class SimpleSyncEngine:
                             })
         
         # After all syncing is done, rebuild indices to get fresh digests
-        build_index(vault1_path, rebuild=False)
-        build_index(vault2_path, rebuild=False)
+        build_index(vault1_path, rebuild=False, auto_fix=True)
+        build_index(vault2_path, rebuild=False, auto_fix=True)
         
         # Reload indices with fresh digests
         with open(vault1_path / ".cast" / "index.json") as f:

@@ -74,5 +74,20 @@
     "tags": [],
     "title": "main",
     "updated": "2025-08-10T01:22:38.767985Z"
+  },
+  "a17a20e2-cf15-4b98-8ba5-de2825e1b4ac": {
+    "cast_type": "",
+    "cast_vaults": [
+      "vault1 (sync)",
+      "vault2 (sync)"
+    ],
+    "cast_version": "1",
+    "category": "",
+    "digest": "sha256:ec36b70684fc83ed3f65326b5f1c7eebb7ae2579aca32042c2815dc02e8641bc",
+    "path": "01 Vault/new_note.md",
+    "size": 237,
+    "tags": [],
+    "title": "new_note",
+    "updated": "2025-08-10T01:40:29.503050Z"
   }
 }

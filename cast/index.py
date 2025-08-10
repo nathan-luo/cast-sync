@@ -104,7 +104,10 @@ def index_file(file_path: Path, vault_root: Path, config: VaultConfig, auto_fix:
                 file_path.write_text(updated_content, encoding="utf-8")
                 content = updated_content
                 cast_id = new_id
-                print(f"[Auto-fix] Added cast-id to {file_path.relative_to(vault_root)}")
+                # Only print in verbose mode or when not auto-fixing during sync
+                import sys
+                if "--verbose" in sys.argv or "-v" in sys.argv:
+                    print(f"Added cast-id to {file_path.relative_to(vault_root)}")
             else:
                 # Log warning but don't modify file
                 import sys
