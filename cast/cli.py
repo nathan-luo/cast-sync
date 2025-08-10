@@ -141,8 +141,17 @@ def init(
     vault_id: Optional[str] = typer.Option(None, "--id", help="Vault ID for global config"),
 ) -> None:
     """Initialize Cast in a vault directory."""
-    # Use provided ID or derive from directory name
-    final_vault_id = vault_id or path.name
+    # Use provided ID or prompt for it
+    if vault_id:
+        final_vault_id = vault_id
+    else:
+        # Prompt for vault name with directory name as default
+        default_name = path.name
+        final_vault_id = typer.prompt(
+            "Enter a name for this vault",
+            default=default_name,
+            type=str
+        )
     
     vault_config = VaultConfig.create_default(path, final_vault_id)
     vault_config.save()
