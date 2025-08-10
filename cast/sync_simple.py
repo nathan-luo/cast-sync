@@ -34,16 +34,27 @@ class SyncState:
         with open(self.state_file, 'w') as f:
             json.dump(self.state, f, indent=2)
     
-    def get_last_sync_digest(self, peer_vault: str, cast_id: str) -> str | None:
-        """Get the last synced digest for a file with a peer vault."""
-        peer_data = self.state.get(peer_vault, {})
+    def get_last_sync_digest(self, peer_vault_id: str, cast_id: str) -> str | None:
+        """Get the last synced digest for a file with a peer vault.
+        
+        Args:
+            peer_vault_id: The vault ID from config (not folder name)
+            cast_id: The cast ID of the file
+        """
+        peer_data = self.state.get(peer_vault_id, {})
         return peer_data.get(cast_id)
     
-    def set_last_sync_digest(self, peer_vault: str, cast_id: str, digest: str):
-        """Record the digest of a file after successful sync."""
-        if peer_vault not in self.state:
-            self.state[peer_vault] = {}
-        self.state[peer_vault][cast_id] = digest
+    def set_last_sync_digest(self, peer_vault_id: str, cast_id: str, digest: str):
+        """Record the digest of a file after successful sync.
+        
+        Args:
+            peer_vault_id: The vault ID from config (not folder name)
+            cast_id: The cast ID of the file
+            digest: The body digest to record
+        """
+        if peer_vault_id not in self.state:
+            self.state[peer_vault_id] = {}
+        self.state[peer_vault_id][cast_id] = digest
 
 
 class SimpleSyncEngine:
@@ -135,8 +146,10 @@ class SimpleSyncEngine:
             vault_result = self._sync_vault_pair(
                 current_path,
                 current_index,
+                current_config,
                 other_path,
                 other_index,
+                other["config"],
                 overpower=overpower,
                 interactive=interactive,
             )
@@ -151,8 +164,10 @@ class SimpleSyncEngine:
         self,
         vault1_path: Path,
         vault1_index: dict,
+        vault1_config: VaultConfig,
         vault2_path: Path,
         vault2_index: dict,
+        vault2_config: VaultConfig,
         overpower: bool = False,
         interactive: bool = True,
     ) -> dict[str, Any]:
@@ -185,6 +200,15 @@ class SimpleSyncEngine:
         for cast_id in all_ids:
             file1_info = vault1_index.get(cast_id)
             file2_info = vault2_index.get(cast_id)
+            
+            # Check if this file should sync between these vaults
+            should_sync = self._should_sync_file(
+                file1_info, file2_info, 
+                vault1_config.vault_id, vault2_config.vault_id
+            )
+            
+            if not should_sync:
+                continue
             
             # Case 1: File only in vault1
             if file1_info and not file2_info:
@@ -231,8 +255,8 @@ class SimpleSyncEngine:
                 
                 if files_different:
                     # Files differ - check if we can auto-merge
-                    last_sync1 = sync_state1.get_last_sync_digest(vault2_path.name, cast_id)
-                    last_sync2 = sync_state2.get_last_sync_digest(vault1_path.name, cast_id)
+                    last_sync1 = sync_state1.get_last_sync_digest(vault2_config.vault_id, cast_id)
+                    last_sync2 = sync_state2.get_last_sync_digest(vault1_config.vault_id, cast_id)
                     
                     # Auto-merge logic:
                     # - If vault1 changed but vault2 didn't (digest2 == last_sync): use vault1
@@ -351,14 +375,55 @@ class SimpleSyncEngine:
                     digest = vault2_fresh[cast_id].get("digest")
                 
                 if digest:
-                    sync_state1.set_last_sync_digest(vault2_path.name, cast_id, digest)
-                    sync_state2.set_last_sync_digest(vault1_path.name, cast_id, digest)
+                    sync_state1.set_last_sync_digest(vault2_config.vault_id, cast_id, digest)
+                    sync_state2.set_last_sync_digest(vault1_config.vault_id, cast_id, digest)
         
         # Save sync states
         sync_state1.save()
         sync_state2.save()
         
         return result
+    
+    def _should_sync_file(
+        self, 
+        file1_info: dict | None, 
+        file2_info: dict | None,
+        vault1_id: str,
+        vault2_id: str,
+    ) -> bool:
+        """Check if a file should sync between two vaults based on cast-vaults field.
+        
+        Args:
+            file1_info: Index info from vault1 (may be None)
+            file2_info: Index info from vault2 (may be None)
+            vault1_id: ID of vault1
+            vault2_id: ID of vault2
+            
+        Returns:
+            True if the file should sync between these vaults
+        """
+        # Get cast_vaults from whichever file exists
+        cast_vaults = []
+        if file1_info:
+            cast_vaults = file1_info.get("cast_vaults", [])
+        elif file2_info:
+            cast_vaults = file2_info.get("cast_vaults", [])
+        
+        # If no cast_vaults field, don't sync
+        # (This is a policy decision - could also default to syncing everywhere)
+        if not cast_vaults:
+            return False
+        
+        # Extract vault names from cast_vaults (format: "vault_name (role)")
+        vault_names = set()
+        for vault_entry in cast_vaults:
+            if isinstance(vault_entry, str):
+                # Extract vault name before parentheses
+                vault_name = vault_entry.split("(")[0].strip()
+                vault_names.add(vault_name)
+        
+        # Both vaults must be in the cast_vaults list for sync
+        return vault1_id in vault_names and vault2_id in vault_names
     
     def _copy_file(self, src: Path, dst: Path) -> None:
         """Copy file reliably."""
@@ -392,10 +457,10 @@ class SimpleSyncEngine:
         content1 = file1.read_text()
         content2 = file2.read_text()
         
-        # Extract just the body for display
-        from cast.merge_cast import extract_yaml_and_body
-        _, _, body1 = extract_yaml_and_body(content1)
-        _, _, body2 = extract_yaml_and_body(content2)
+        # Extract just the body for display using our new md module
+        from cast.md import split_frontmatter
+        _, _, body1 = split_frontmatter(content1)
+        _, _, body2 = split_frontmatter(content2)
         
         # Show both versions
         console.print(f"\n[yellow]Conflict in file:[/yellow] {file1.name}")

@@ -1,48 +1,18 @@
 {
-  "0354d1bf-46d7-4b46-bacb-7322e77fbf0f": {
+  "46b14ccc-0610-407f-9e8a-7eff96d22ff4": {
     "cast_type": "",
     "cast_vaults": [
-      "vault1 (sync)",
-      "vault2 (sync)"
+      "vault2 (sync)",
+      "vault3 (sync)"
     ],
     "cast_version": "1",
     "category": "",
-    "digest": "sha256:ea45279e873ade50c02c9cd687ddaea083bbc49c928cb87bad168e29f14e9bb8",
-    "path": "01 Vault/another.md",
-    "size": 182,
+    "digest": "sha256:1307b166d37891a83f78d9ee242d7f3e5b2d6ef3e052e9c32e255c55957e31ca",
+    "path": "01 Vault/justvault23.md",
+    "size": 112,
     "tags": [],
-    "title": "another",
-    "updated": "2025-08-09T16:06:09.457610Z"
-  },
-  "089d1ac4-c8bd-4560-ad6d-f1ebe05d595f": {
-    "cast_type": "",
-    "cast_vaults": [
-      "vault1 (sync)",
-      "vault2 (sync)"
-    ],
-    "cast_version": "1",
-    "category": "",
-    "digest": "sha256:42220983e804018f5f626ee21e47e600457722b2d716e15b40ae0197d0712e0d",
-    "path": "01 Vault/test.md",
-    "size": 264,
-    "tags": [],
-    "title": "test",
-    "updated": "2025-08-10T00:56:48.918849Z"
-  },
-  "23bf51c0-0ab7-4398-8306-b00afd7724b1": {
-    "cast_type": "",
-    "cast_vaults": [
-      "vault1 (sync)",
-      "vault2 (sync)"
-    ],
-    "cast_version": "1",
-    "category": "",
-    "digest": "sha256:2cffd33873c3104be365dc0aa34925df7b399684d795c114139b19957ea2f650",
-    "path": "01 Vault/anotherfile.md",
-    "size": 373,
-    "tags": [],
-    "title": "anotherfile",
-    "updated": "2025-08-09T16:05:03.967012Z"
+    "title": "justvault23",
+    "updated": "2025-08-10T01:24:10.665165Z"
   },
   "5d8d777b-51ed-4dd2-ba7d-6f8194ce03da": {
     "cast_type": "",
@@ -53,11 +23,11 @@
     ],
     "cast_version": "1",
     "category": "",
-    "digest": "sha256:5a9c86e133d4a175f1c62448dd3d9e6d4a6b8268377f634a2bbd1623dd304aae",
+    "digest": "sha256:1945cf6576298870ea24493a0f80cc5fb528e5b761bcfb08b3be464f9614f07b",
     "path": "01 Vault/main.md",
-    "size": 430,
+    "size": 451,
     "tags": [],
     "title": "main",
-    "updated": "2025-08-10T00:56:15.872209Z"
+    "updated": "2025-08-10T01:22:38.767985Z"
   }
 }

@@ -3,6 +3,7 @@ cast-id: 5d8d777b-51ed-4dd2-ba7d-6f8194ce03da
 cast-vaults:
 - vault1 (sync)
 - vault2 (sync)
+- vault3 (sync)
 ---
 
 Hello this is a test! @ yay!
@@ -18,6 +19,8 @@ So any changes I make
 This is reliable
 And this is better
 asdf
+
+Yay so how is this?
 
 -asdasd
 Different text from vault2

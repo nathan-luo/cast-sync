@@ -5,7 +5,17 @@ from datetime import datetime
 from pathlib import Path
 
 from cast.index import Index
-from cast.peers import list_peers, PeerState
+# Legacy import - stubbed for compatibility
+# from cast.peers import list_peers, PeerState
+
+# Stub for legacy compatibility
+def list_peers(vault_root):
+    """Stub - returns empty list."""
+    return []
+
+class PeerState:
+    def __init__(self, *args, **kwargs):
+        self.baseline = {}
 
 
 def create_snapshot(

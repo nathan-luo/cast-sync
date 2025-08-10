@@ -59,8 +59,15 @@ class Index:
         return None
 
 
-def index_file(file_path: Path, vault_root: Path, config: VaultConfig) -> dict[str, Any] | None:
+def index_file(file_path: Path, vault_root: Path, config: VaultConfig, auto_fix: bool = False) -> dict[str, Any] | None:
     """Index a single markdown file.
+    
+    Args:
+        file_path: Path to the file to index
+        vault_root: Root path of the vault
+        config: Vault configuration
+        auto_fix: If True, automatically add cast-id to files with cast metadata.
+                  If False, only log warnings about missing IDs.
     
     Returns:
         Index entry or None if file should be skipped
@@ -79,25 +86,32 @@ def index_file(file_path: Path, vault_root: Path, config: VaultConfig) -> dict[s
     # Get or create cast-id
     cast_id = get_cast_id(file_path)
     if not cast_id:
-        # Auto-add cast-id if file has cast-vaults or other cast metadata
+        # Check if file has cast metadata but no ID
         if fm_dict and any(key.startswith("cast-") for key in fm_dict.keys()):
-            # File has cast metadata, add a cast-id
-            from cast.ids import generate_cast_id, ensure_cast_id_first
-            import yaml
-            
-            # Add cast-id to frontmatter
-            new_id = generate_cast_id()
-            fm_dict["cast-id"] = new_id
-            
-            # Reconstruct content with cast-id first
-            fm_yaml = yaml.safe_dump(fm_dict, sort_keys=False, allow_unicode=True)
-            updated_content = f"---\n{fm_yaml}---\n{body}"
-            updated_content = ensure_cast_id_first(updated_content)
-            
-            # Write back to file
-            file_path.write_text(updated_content, encoding="utf-8")
-            content = updated_content
-            cast_id = new_id
+            if auto_fix:
+                # File has cast metadata, add a cast-id
+                from cast.ids import generate_cast_id, ensure_cast_id_first
+                import yaml
+                
+                # Add cast-id to frontmatter
+                new_id = generate_cast_id()
+                fm_dict["cast-id"] = new_id
+                
+                # Reconstruct content with cast-id first
+                fm_yaml = yaml.safe_dump(fm_dict, sort_keys=False, allow_unicode=True)
+                updated_content = f"---\n{fm_yaml}---\n{body}"
+                updated_content = ensure_cast_id_first(updated_content)
+                
+                # Write back to file
+                file_path.write_text(updated_content, encoding="utf-8")
+                content = updated_content
+                cast_id = new_id
+                print(f"[Auto-fix] Added cast-id to {file_path.relative_to(vault_root)}")
+            else:
+                # Log warning but don't modify file
+                import sys
+                print(f"[Warning] File has cast metadata but no cast-id: {file_path.relative_to(vault_root)}", file=sys.stderr)
+                print(f"  Run 'cast index --fix' to automatically add cast-ids", file=sys.stderr)
             
             # Re-extract for consistency
             fm_dict, _, body = extract_frontmatter(content)
@@ -138,12 +152,13 @@ def index_file(file_path: Path, vault_root: Path, config: VaultConfig) -> dict[s
     return {cast_id: entry}
 
 
-def build_index(vault_root: Path, rebuild: bool = False) -> dict[str, dict[str, Any]]:
+def build_index(vault_root: Path, rebuild: bool = False, auto_fix: bool = False) -> dict[str, dict[str, Any]]:
     """Build or update the vault index.
     
     Args:
         vault_root: Root directory of the vault
         rebuild: Force full rebuild instead of incremental
+        auto_fix: If True, automatically add cast-id to files with cast metadata
         
     Returns:
         The complete index data
@@ -187,7 +202,7 @@ def build_index(vault_root: Path, rebuild: bool = False) -> dict[str, dict[str, 
                     continue
         
         # Index the file
-        result = index_file(file_path, vault_root, config)
+        result = index_file(file_path, vault_root, config, auto_fix=auto_fix)
         if result:
             cast_id = list(result.keys())[0]
             entry = list(result.values())[0]

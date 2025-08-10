@@ -8,8 +8,26 @@ from typing import Any
 from cast.config import GlobalConfig, VaultConfig
 from cast.index import Index
 from cast.normalize import compute_normalized_digest
-from cast.objects import ObjectStore
-from cast.peers import PeerState, get_common_baseline
+# Legacy imports - stubbed for compatibility
+# from cast.objects import ObjectStore
+# from cast.peers import PeerState, get_common_baseline
+
+# Stub classes for legacy compatibility
+class ObjectStore:
+    def __init__(self, *args, **kwargs):
+        pass
+    def get_object(self, *args):
+        return None
+
+class PeerState:
+    def __init__(self, *args, **kwargs):
+        self.baseline = {}
+    def get_baseline(self, *args):
+        return {}
+
+def get_common_baseline(state1, state2, cast_id):
+    """Stub for legacy baseline function."""
+    return None
 from cast.select import select_by_rule
 
 

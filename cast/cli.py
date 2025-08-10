@@ -52,6 +52,7 @@ def install() -> None:
 def config() -> None:
     """Open global configuration in default text editor."""
     import os
+    import platform
     import subprocess
     
     config = GlobalConfig.load_or_create()
@@ -61,8 +62,32 @@ def config() -> None:
     if not config_path.exists():
         config.save()
     
-    # Use EDITOR env var, fallback to common defaults
-    editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "nano"
+    # Use EDITOR env var, fallback to platform-specific defaults
+    editor = os.environ.get("EDITOR") or os.environ.get("VISUAL")
+    
+    if not editor:
+        system = platform.system()
+        if system == "Windows":
+            # Use notepad on Windows
+            try:
+                subprocess.run(["notepad", str(config_path)])
+                return
+            except Exception as e:
+                console.print(f"[red]Failed to open config with notepad: {e}[/red]")
+                console.print(f"Config location: {config_path}")
+                return
+        elif system == "Darwin":
+            # Use open command on macOS
+            try:
+                subprocess.run(["open", str(config_path)])
+                return
+            except Exception as e:
+                console.print(f"[red]Failed to open config with default editor: {e}[/red]")
+                console.print(f"Config location: {config_path}")
+                return
+        else:
+            # Default to nano on Linux/Unix
+            editor = "nano"
     
     try:
         subprocess.run([editor, str(config_path)])
@@ -197,9 +222,10 @@ def ids_add(
 def index(
     path: Path = typer.Argument(Path.cwd(), help="Vault root directory"),
     rebuild: bool = typer.Option(False, "--rebuild", help="Force full index rebuild"),
+    fix: bool = typer.Option(False, "--fix", help="Automatically add cast-id to files with cast metadata"),
 ) -> None:
     """Build or update the vault index."""
-    index_data = build_index(path, rebuild=rebuild)
+    index_data = build_index(path, rebuild=rebuild, auto_fix=fix)
     
     console.print(f"[green]✓[/green] Index updated")
     console.print(f"  Files indexed: {len(index_data)}")
@@ -260,6 +286,8 @@ def sync(
     legacy: bool = typer.Option(False, "--legacy", help="Use legacy two-vault sync"),
     source: Optional[str] = typer.Option(None, "--source", help="Source vault (legacy mode)"),
     dest: Optional[str] = typer.Option(None, "--dest", help="Destination vault (legacy mode)"),
+    apply: bool = typer.Option(True, "--apply/--dry-run", help="Apply changes (default) or dry run"),
+    force: bool = typer.Option(False, "--force", help="Proceed even if conflicts are detected (legacy mode)"),
 ) -> None:
     """Synchronize current vault with all connected vaults.
     
@@ -278,7 +306,7 @@ def sync(
         engine = SyncEngine()
         
         try:
-            results = engine.sync(source, dest, apply=not dry_run, force=force)
+            results = engine.sync(source, dest, apply=apply, force=force)
         except ValueError as e:
             console.print(f"[red]Error: {e}[/red]")
             console.print("\n[yellow]Available vaults:[/yellow]")
@@ -288,7 +316,7 @@ def sync(
             raise typer.Exit(1)
         
         # Display legacy results
-        if dry_run:
+        if not apply:
             console.print("[yellow]Dry run mode - no changes applied[/yellow]\n")
         
         table = Table(title="Sync Results (Legacy)")
@@ -525,6 +553,14 @@ def reset(
     saved_config = None
     if keep_config and config_file.exists():
         saved_config = config_file.read_text()
+    
+    # Delete directories that may exist from legacy versions
+    to_remove_dirs = ["objects", "peers", "logs", "locks", "snapshots"]
+    for d in to_remove_dirs:
+        dir_path = cast_dir / d
+        if dir_path.exists():
+            shutil.rmtree(dir_path, ignore_errors=True)
+            console.print(f"  [green]✓[/green] Removed .cast/{d}/")
     
     # Delete files
     if index_file.exists():
