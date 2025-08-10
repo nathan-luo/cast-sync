@@ -7,8 +7,6 @@ from typing import Any
 
 from cast.config import VaultConfig
 from cast.ids import get_cast_id, extract_frontmatter
-from cast.normalize import compute_normalized_digest
-from cast.select import select_files
 
 
 class Index:
@@ -130,7 +128,9 @@ def index_file(file_path: Path, vault_root: Path, config: VaultConfig, auto_fix:
             fm_dict, _, body = extract_frontmatter(content)
     
     # Compute normalized digest (of body only, not YAML)
-    body_digest = compute_normalized_digest(body, body_only=True)
+    # Compute body-only digest (for sync comparison)
+    import hashlib
+    body_digest = f"sha256:{hashlib.sha256(body.encode()).hexdigest()}"
     
     # Get file stats
     stat = file_path.stat()
@@ -178,11 +178,21 @@ def build_index(vault_root: Path, rebuild: bool = False, auto_fix: bool = False)
     seen_ids = set()
     
     # Find all markdown files
-    files = select_files(
-        vault_root,
-        include_patterns=config.include_patterns,
-        exclude_patterns=config.exclude_patterns,
-    )
+    import glob
+    files = []
+    for pattern in config.include_patterns:
+        full_pattern = vault_root / pattern
+        for path in glob.glob(str(full_pattern), recursive=True):
+            file_path = Path(path)
+            if file_path.is_file() and file_path.suffix == ".md":
+                # Check if excluded
+                exclude = False
+                for exc in config.exclude_patterns:
+                    if file_path.match(exc):
+                        exclude = True
+                        break
+                if not exclude:
+                    files.append(file_path)
     
     for file_path in files:
         if file_path.suffix != ".md":
@@ -263,7 +273,7 @@ def validate_index(vault_root: Path) -> list[dict[str, Any]]:
         content = file_path.read_text(encoding="utf-8")
         from cast.ids import extract_frontmatter
         _, _, body = extract_frontmatter(content)
-        actual_digest = compute_normalized_digest(body, body_only=True)
+        actual_digest = f"sha256:{hashlib.sha256(body.encode()).hexdigest()}"
         
         if actual_digest != entry["digest"]:
             issues.append({

@@ -1,9 +1,15 @@
-"""Cast sync service - Knowledge-aware sync for Markdown vaults."""
+"""Cast - Simple & reliable sync for Markdown vaults."""
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 
-from cast.config import CastConfig, VaultConfig
-from cast.index import Index
-from cast.sync import SyncEngine
+from cast.config import GlobalConfig, VaultConfig
+from cast.index import Index, build_index
+from cast.sync_simple import SimpleSyncEngine
 
-__all__ = ["CastConfig", "VaultConfig", "Index", "SyncEngine"]
+__all__ = [
+    "GlobalConfig",
+    "VaultConfig", 
+    "Index",
+    "build_index",
+    "SimpleSyncEngine",
+]

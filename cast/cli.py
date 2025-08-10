@@ -9,10 +9,7 @@ from rich.table import Table
 
 from cast import __version__
 from cast.config import GlobalConfig, VaultConfig
-from cast.ids import add_cast_ids
 from cast.index import build_index
-from cast.plan import create_plan
-from cast.sync import SyncEngine
 from cast.util import setup_logging
 
 app = typer.Typer(
@@ -186,36 +183,18 @@ def vault_create(
     console.print(f"[green]✓[/green] Created vault structure at {path}")
 
 
-# Create a sub-app for ids commands
-ids_app = typer.Typer(name="ids", help="UUID management commands")
-app.add_typer(ids_app)
-
-
-@ids_app.command(name="add")
-def ids_add(
+@vault_app.command(name="obsidian")
+def vault_obsidian(
     path: Path = typer.Argument(Path.cwd(), help="Vault root directory"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show changes without applying"),
+    profile: str = typer.Option("default", help="Obsidian profile to use"),
 ) -> None:
-    """Add cast-id UUIDs to files missing them."""
-    results = add_cast_ids(path, dry_run=dry_run)
+    """Initialize Obsidian configuration for the vault."""
+    from cast.obsidian import init_obsidian_config
     
-    if dry_run:
-        console.print("[yellow]Dry run mode - no changes made[/yellow]")
-    
-    table = Table(title="Cast ID Assignment")
-    table.add_column("File", style="cyan")
-    table.add_column("Status", style="green")
-    table.add_column("UUID", style="dim")
-    
-    for result in results:
-        table.add_row(
-            str(result["path"].relative_to(path)),
-            result["status"],
-            result.get("uuid", "-"),
-        )
-    
-    console.print(table)
-    console.print(f"\n[green]✓[/green] Processed {len(results)} files")
+    init_obsidian_config(path, profile)
+    console.print(f"[green]✓[/green] Obsidian configuration initialized")
+
+
 
 
 @app.command()
@@ -232,62 +211,12 @@ def index(
     console.print(f"  Location: {path / '.cast' / 'index.json'}")
 
 
-@app.command()
-def plan(
-    source: str = typer.Argument(..., help="Source vault ID (from global config)"),
-    dest: str = typer.Argument(..., help="Destination vault ID (from global config)"),
-    rule: Optional[str] = typer.Option(None, "--rule", "-r", help="Sync rule ID"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Save plan to file"),
-) -> None:
-    """Create a sync plan without applying changes."""
-    try:
-        plan_data = create_plan(source, dest, rule_id=rule)
-    except ValueError as e:
-        console.print(f"[red]Error: {e}[/red]")
-        console.print("\n[yellow]Available vaults:[/yellow]")
-        config = GlobalConfig.load()
-        for name, path in config.vaults.items():
-            console.print(f"  • {name}: {path}")
-        raise typer.Exit(1)
-    
-    # Display summary
-    table = Table(title="Sync Plan")
-    table.add_column("Action", style="bold")
-    table.add_column("Count", justify="right")
-    
-    action_counts = {}
-    for action in plan_data["actions"]:
-        action_counts[action["type"]] = action_counts.get(action["type"], 0) + 1
-    
-    for action_type, count in action_counts.items():
-        color = {
-            "CREATE": "green",
-            "UPDATE": "blue", 
-            "MERGE": "yellow",
-            "CONFLICT": "red",
-            "SKIP": "dim",
-        }.get(action_type, "white")
-        table.add_row(f"[{color}]{action_type}[/{color}]", str(count))
-    
-    console.print(table)
-    
-    if output:
-        import json
-        output.write_text(json.dumps(plan_data, indent=2))
-        console.print(f"\n[green]✓[/green] Plan saved to {output}")
-
 
 @app.command()
 def sync(
     vault: Optional[str] = typer.Argument(None, help="Vault ID or path (defaults to current directory)"),
-    path: Optional[Path] = typer.Option(None, "--path", "-p", help="Vault path"),
     overpower: bool = typer.Option(False, "--overpower", help="Force current vault's version to all others"),
     batch: bool = typer.Option(False, "--batch", help="Non-interactive mode"),
-    legacy: bool = typer.Option(False, "--legacy", help="Use legacy two-vault sync"),
-    source: Optional[str] = typer.Option(None, "--source", help="Source vault (legacy mode)"),
-    dest: Optional[str] = typer.Option(None, "--dest", help="Destination vault (legacy mode)"),
-    apply: bool = typer.Option(True, "--apply/--dry-run", help="Apply changes (default) or dry run"),
-    force: bool = typer.Option(False, "--force", help="Proceed even if conflicts are detected (legacy mode)"),
 ) -> None:
     """Synchronize current vault with all connected vaults.
     
@@ -297,45 +226,6 @@ def sync(
     - Use --overpower to force current vault's version everywhere
     - Use --batch for non-interactive mode
     """
-    # Handle legacy mode
-    if legacy or (source and dest):
-        if not source or not dest:
-            console.print("[red]Error: Legacy mode requires --source and --dest[/red]")
-            raise typer.Exit(1)
-        
-        engine = SyncEngine()
-        
-        try:
-            results = engine.sync(source, dest, apply=apply, force=force)
-        except ValueError as e:
-            console.print(f"[red]Error: {e}[/red]")
-            console.print("\n[yellow]Available vaults:[/yellow]")
-            config = GlobalConfig.load()
-            for name, path in config.vaults.items():
-                console.print(f"  • {name}: {path}")
-            raise typer.Exit(1)
-        
-        # Display legacy results
-        if not apply:
-            console.print("[yellow]Dry run mode - no changes applied[/yellow]\n")
-        
-        table = Table(title="Sync Results (Legacy)")
-        table.add_column("File", style="cyan")
-        table.add_column("Action", style="bold")
-        table.add_column("Status")
-        
-        for result in results:
-            status_color = "green" if result["success"] else "red"
-            table.add_row(
-                result["file"],
-                result["action"],
-                f"[{status_color}]{result['status']}[/{status_color}]",
-            )
-        
-        console.print(table)
-        return
-    
-    # Simple sync
     from cast.sync_simple import SimpleSyncEngine
     
     # Determine vault path
@@ -344,8 +234,6 @@ def sync(
         vault_path = config.get_vault_path(vault)
         if not vault_path:
             vault_path = Path(vault)
-    elif path:
-        vault_path = path
     else:
         vault_path = Path.cwd()
     
@@ -428,44 +316,6 @@ def sync(
 
 
 
-
-@app.command()
-def commit(
-    path: Path = typer.Argument(Path.cwd(), help="Vault root directory"),
-    message: Optional[str] = typer.Option(None, "--message", "-m", help="Commit message"),
-    git: bool = typer.Option(False, "--git", help="Also create git commit"),
-) -> None:
-    """Create a snapshot of current vault state."""
-    from cast.snapshot import create_snapshot
-    
-    snapshot_path = create_snapshot(path, message=message)
-    console.print(f"[green]✓[/green] Snapshot created: {snapshot_path}")
-    
-    if git:
-        import subprocess
-        
-        try:
-            subprocess.run(["git", "add", ".cast/"], cwd=path, check=True)
-            subprocess.run(
-                ["git", "commit", "-m", message or f"Cast snapshot {snapshot_path.name}"],
-                cwd=path,
-                check=True,
-            )
-            console.print("[green]✓[/green] Git commit created")
-        except subprocess.CalledProcessError as e:
-            console.print(f"[red]✗[/red] Git commit failed: {e}")
-
-
-@app.command(name="obsidian-init")
-def obsidian_init(
-    path: Path = typer.Argument(Path.cwd(), help="Vault root directory"),
-    profile: str = typer.Option("default", help="Obsidian profile to use"),
-) -> None:
-    """Initialize Obsidian configuration for the vault."""
-    from cast.obsidian import init_obsidian_config
-    
-    init_obsidian_config(path, profile)
-    console.print(f"[green]✓[/green] Obsidian configuration initialized")
 
 
 @app.command()
