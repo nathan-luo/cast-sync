@@ -44,6 +44,21 @@
     "title": "anotherfile",
     "updated": "2025-08-09T16:05:03.967012Z"
   },
+  "2c235932-8503-4714-af3e-4d5a66c2ca14": {
+    "cast_type": "",
+    "cast_vaults": [
+      "vault1 (sync)",
+      "vault2 (sync)"
+    ],
+    "cast_version": "1",
+    "category": "",
+    "digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "path": "01 Vault/bugged.md",
+    "size": 99,
+    "tags": [],
+    "title": "bugged",
+    "updated": "2025-08-10T01:44:07.724193Z"
+  },
   "46b14ccc-0610-407f-9e8a-7eff96d22ff4": {
     "cast_type": "",
     "cast_vaults": [
@@ -89,5 +104,20 @@
     "tags": [],
     "title": "new_note",
     "updated": "2025-08-10T01:40:29.503050Z"
+  },
+  "a680f970-1a86-4043-b4ce-32251a3b92d0": {
+    "cast_type": "",
+    "cast_vaults": [
+      "vault1 (sync)",
+      "vault2 (sync)"
+    ],
+    "cast_version": "1",
+    "category": "",
+    "digest": "sha256:e7d1835c75795073b6f76dd3c3125892d4e6253a797aed7be9ed13337c56e4f2",
+    "path": "01 Vault/just12.md",
+    "size": 113,
+    "tags": [],
+    "title": "just12",
+    "updated": "2025-08-10T01:42:55.164774Z"
   }
 }
