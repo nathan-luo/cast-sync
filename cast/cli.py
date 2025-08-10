@@ -13,7 +13,6 @@ from cast.ids import add_cast_ids
 from cast.index import build_index
 from cast.plan import create_plan
 from cast.sync import SyncEngine
-from cast.resolve import ConflictResolver
 from cast.util import setup_logging
 
 app = typer.Typer(
@@ -400,70 +399,6 @@ def sync(
         console.print(f"  [green]✓ All vaults are in sync![/green]")
 
 
-@app.command()
-def resolve(
-    vault: Optional[str] = typer.Argument(None, help="Vault ID or path"),
-    path: Optional[Path] = typer.Option(None, "--path", "-p", help="Vault path"),
-    files: Optional[list[Path]] = typer.Argument(None, help="Specific files to resolve"),
-    interactive: bool = typer.Option(True, "--interactive/--batch", help="Interactive mode"),
-    auto: str = typer.Option("source", help="Auto-resolve mode: source, dest"),
-) -> None:
-    """Resolve sync conflicts interactively."""
-    # Determine vault path
-    if vault:
-        config = GlobalConfig.load()
-        vault_path = config.get_vault_path(vault)
-        if not vault_path:
-            vault_path = Path(vault)
-    elif path:
-        vault_path = path
-    else:
-        vault_path = Path.cwd()
-    
-    resolver = ConflictResolver()
-    results = resolver.resolve(
-        vault_path, 
-        files=files, 
-        interactive=interactive,
-        auto_mode=auto if not interactive else "ask"
-    )
-    
-    if not results:
-        return
-    
-    resolved_count = sum(1 for r in results if r["resolved"])
-    if resolved_count > 0:
-        console.print(f"\n[green]✓ Successfully resolved {resolved_count} conflict(s)[/green]")
-    else:
-        console.print(f"\n[yellow]No conflicts were resolved[/yellow]")
-
-
-@app.command(name="conflicts")
-def list_conflicts(
-    vault: Optional[str] = typer.Argument(None, help="Vault ID or path"),
-    path: Optional[Path] = typer.Option(None, "--path", "-p", help="Vault path"),
-) -> None:
-    """List all conflict files in a vault."""
-    # Determine vault path
-    if vault:
-        config = GlobalConfig.load()
-        vault_path = config.get_vault_path(vault)
-        if not vault_path:
-            vault_path = Path(vault)
-    elif path:
-        vault_path = path
-    else:
-        vault_path = Path.cwd()
-    
-    resolver = ConflictResolver()
-    conflict_files = resolver.list_conflicts(vault_path)
-    
-    if not conflict_files:
-        console.print("[green]No conflicts found![/green]")
-    else:
-        console.print(f"[yellow]Found {len(conflict_files)} conflict file(s)[/yellow]\n")
-        for file in conflict_files:
-            console.print(f"  • {file.relative_to(vault_path)}")
 
 
 @app.command()

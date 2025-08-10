@@ -1,0 +1,24 @@
+cast-version: '1'
+vault:
+  id: vault3
+  root: /home/natha/dev/cast-sync/vault3
+index:
+  include:
+  - 01 Vault/**/*.md
+  exclude:
+  - .git/**
+  - .cast/**
+  - .obsidian/**
+  - 00 Software/**
+  - 03 Records/**
+  - 04 Sources/**
+  - 05 Media/**
+  - 06 Extras/**
+  - 09 Exports/**
+sync:
+  rules: []
+merge:
+  ephemeral_keys:
+  - updated
+  - last_synced
+  - base-version
